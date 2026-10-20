@@ -1,0 +1,660 @@
+/* ra.c -- where a core's sound goes. A copy of hibr's mods/media/ao.c (hibr 0.99.269) with its names changed
+   and HIBR_RETRO_AUDIO for HIBR_MEDIA_AUDIO; to be replaced by an audio interface in hibr proper. */
+#define _GNU_SOURCE
+
+#include "ra.h"
+#include <dlfcn.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+/* Seconds on a clock that only goes forward. */
+double ra_now(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+/* Look up one symbol, counting what is missing. */
+void *ra_sym(void *h, const char *nm, int *bad)
+{
+	void *f = h ? dlsym(h, nm) : 0;
+
+	if (!f) {
+		lg(HIBR_LDBG, "retro: no %s", nm);
+		(*bad)++;
+	}
+	return f;
+}
+
+/* --- nowhere, at the pace of a device ----------------------------------- */
+
+/* The pacing state of a device that plays nothing: when it started, and
+   how many frames it has been given. */
+typedef struct ra_pace ra_pace;
+struct ra_pace {
+	double t0;
+	long long frames;
+	FILE *wav;
+	long long bytes;
+};
+
+/* Open the silent output. */
+int ra_nopen(ra_ao *a, int rate, int ch)
+{
+	ra_pace *p = xm(sizeof *p);
+
+	memset(p, 0, sizeof *p);
+	a->st = p;
+	a->rate = rate;
+	a->ch = ch;
+	return HIBR_OK;
+}
+
+/* Sleep until what was written would have played, keeping a tenth of a
+   second ahead, the way a real device's buffer would. */
+int ra_nwrite(ra_ao *a, const int16_t *s, int n)
+{
+	ra_pace *p = a->st;
+	double ahead;
+
+	(void)s;
+	if (!p->t0)
+		p->t0 = ra_now();
+	if (p->wav) {
+		fwrite(s, sizeof *s, (size_t)n * a->ch, p->wav);
+		fflush(p->wav);
+		p->bytes += (long long)n * a->ch * 2;
+	}
+	p->frames += n;
+	ahead = (double)p->frames / a->rate - (ra_now() - p->t0);
+	if (ahead > 0.1)
+		usleep((useconds_t)((ahead - 0.1) * 1e6));
+	return HIBR_OK;
+}
+
+/* What has been written and not yet played. */
+double ra_ndelay(ra_ao *a)
+{
+	ra_pace *p = a->st;
+	double d;
+
+	if (!p->t0)
+		return 0;
+	d = (double)p->frames / a->rate - (ra_now() - p->t0);
+	return d > 0 ? d : 0;
+}
+
+/* Forget what was waiting: the next write starts the pace again. */
+void ra_nflush(ra_ao *a)
+{
+	ra_pace *p = a->st;
+
+	p->t0 = 0;
+	p->frames = 0;
+}
+
+/* Write a little-endian number of n bytes. */
+void ra_le(FILE *f, unsigned long v, int n)
+{
+	while (n--) {
+		fputc((int)(v & 255), f);
+		v >>= 8;
+	}
+}
+
+/* Write a WAV header for the bytes so far. */
+void ra_wavhead(ra_ao *a, ra_pace *p)
+{
+	fseek(p->wav, 0, SEEK_SET);
+	fwrite("RIFF", 1, 4, p->wav);
+	ra_le(p->wav, (unsigned long)(36 + p->bytes), 4);
+	fwrite("WAVEfmt ", 1, 8, p->wav);
+	ra_le(p->wav, 16, 4);
+	ra_le(p->wav, 1, 2);
+	ra_le(p->wav, (unsigned long)a->ch, 2);
+	ra_le(p->wav, (unsigned long)a->rate, 4);
+	ra_le(p->wav, (unsigned long)a->rate * a->ch * 2, 4);
+	ra_le(p->wav, (unsigned long)a->ch * 2, 2);
+	ra_le(p->wav, 16, 2);
+	fwrite("data", 1, 4, p->wav);
+	ra_le(p->wav, (unsigned long)p->bytes, 4);
+	fseek(p->wav, 0, SEEK_END);
+}
+
+/* Close the silent output, finishing a WAV file if it wrote one. */
+void ra_nclose(ra_ao *a)
+{
+	ra_pace *p = a->st;
+
+	if (!p)
+		return;
+	if (p->wav) {
+		ra_wavhead(a, p);
+		fclose(p->wav);
+	}
+	free(p);
+	a->st = 0;
+}
+
+/* --- PulseAudio, and PipeWire through it, on Linux ----------------------- */
+
+/* libpulse-simple's sample format and buffer sizes, as its headers have
+   them; they are not included, since tcc reads none of it and the calls
+   are few. S16 in the machine's own order. */
+typedef struct ra_pss ra_pss;
+struct ra_pss {
+	int format;
+	uint32_t rate;
+	uint8_t channels;
+};
+typedef struct ra_pba ra_pba;
+struct ra_pba {
+	uint32_t maxlength, tlength, prebuf, minreq, fragsize;
+};
+typedef struct ra_pulse ra_pulse;
+struct ra_pulse {
+	void *s;
+	void *(*snew)(const char *, const char *, int, const char *,
+		      const char *, const ra_pss *, const void *,
+		      const ra_pba *, int *);
+	int (*swrite)(void *, const void *, size_t, int *);
+	uint64_t (*slat)(void *, int *);
+	int (*sflush)(void *, int *);
+	void (*sfree)(void *);
+};
+
+/* Open a stream to the sound server's default output, which is the device
+   chosen in Control Panel > Sound (Gitea #306). A tenth of a second
+   buffered, as ALSA is asked for; the server's own default is seconds. */
+int ra_popen(ra_ao *a, int rate, int ch)
+{
+	ra_pulse *x;
+	ra_pss ss;
+	ra_pba ba;
+	void *h = dlopen("libpulse-simple.so.0", RTLD_NOW | RTLD_LOCAL);
+	int bad = 0, e = 0;
+
+	if (!h)
+		return HIBR_FAIL;
+	x = xm(sizeof *x);
+	memset(x, 0, sizeof *x);
+	x->snew = ra_sym(h, "pa_simple_new", &bad);
+	x->swrite = ra_sym(h, "pa_simple_write", &bad);
+	x->slat = ra_sym(h, "pa_simple_get_latency", &bad);
+	x->sflush = ra_sym(h, "pa_simple_flush", &bad);
+	x->sfree = ra_sym(h, "pa_simple_free", &bad);
+	if (bad) {
+		free(x);
+		dlclose(h);
+		return HIBR_FAIL;
+	}
+	memset(&ss, 0, sizeof ss);
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	ss.format = 4;
+#else
+	ss.format = 3;
+#endif
+	ss.rate = (uint32_t)rate;
+	ss.channels = (uint8_t)ch;
+	ba.maxlength = (uint32_t)-1;
+	ba.tlength = (uint32_t)(rate / 10) * (uint32_t)ch * 2;
+	ba.prebuf = (uint32_t)-1;
+	ba.minreq = (uint32_t)-1;
+	ba.fragsize = (uint32_t)-1;
+	x->s = x->snew(0, "hibr", 1, 0, "media", &ss, 0, &ba, &e);
+	if (!x->s) {
+		lg(HIBR_LDBG, "media: no sound server (%d)", e);
+		free(x);
+		dlclose(h);
+		return HIBR_FAIL;
+	}
+	a->h = h;
+	a->st = x;
+	a->rate = rate;
+	a->ch = ch;
+	return HIBR_OK;
+}
+
+/* Write sound to the server; it blocks while the buffer is full, as ALSA's
+   write does. */
+int ra_pwrite(ra_ao *a, const int16_t *s, int n)
+{
+	ra_pulse *x = a->st;
+	int e = 0;
+
+	if (x->swrite(x->s, s, (size_t)n * (size_t)a->ch * 2, &e) < 0)
+		return HIBR_FAIL;
+	return HIBR_OK;
+}
+
+/* How long until the last sample written is heard. */
+double ra_pdelay(ra_ao *a)
+{
+	ra_pulse *x = a->st;
+	int e = 0;
+	uint64_t us = x->slat(x->s, &e);
+
+	return e ? 0 : (double)us / 1e6;
+}
+
+/* Throw away what is waiting to be played, for a pause or a seek. */
+void ra_pflush(ra_ao *a)
+{
+	ra_pulse *x = a->st;
+	int e = 0;
+
+	x->sflush(x->s, &e);
+}
+
+/* Close the stream. */
+void ra_pclose(ra_ao *a)
+{
+	ra_pulse *x = a->st;
+
+	if (!x)
+		return;
+	x->sfree(x->s);
+	free(x);
+	dlclose(a->h);
+	a->st = 0;
+	a->h = 0;
+}
+
+/* --- ALSA, on Linux ------------------------------------------------------ */
+
+/* The few libasound calls used, loaded at run time. */
+typedef struct ra_alsa ra_alsa;
+struct ra_alsa {
+	void *pcm;
+	int (*open)(void **, const char *, int, int);
+	int (*setp)(void *, int, int, unsigned, unsigned, int, unsigned);
+	long (*writei)(void *, const void *, unsigned long);
+	int (*recover)(void *, int, int);
+	int (*delay)(void *, long *);
+	int (*drop)(void *);
+	int (*prepare)(void *);
+	int (*close)(void *);
+	int (*errh)(void *);
+};
+
+/* Says nothing: libasound's own complaints would land in the desktop's log
+   every time a machine with no sound card opened a video. */
+void ra_quiet(const char *f, int l, const char *fn, int e, const char *fmt, ...)
+{
+	(void)f;
+	(void)l;
+	(void)fn;
+	(void)e;
+	(void)fmt;
+}
+
+/* Open the default ALSA device for 16-bit interleaved sound. */
+int ra_aopen(ra_ao *a, int rate, int ch)
+{
+	ra_alsa *x;
+	void *h = dlopen("libasound.so.2", RTLD_NOW | RTLD_LOCAL);
+	int bad = 0, e;
+
+	if (!h)
+		return HIBR_FAIL;
+	x = xm(sizeof *x);
+	memset(x, 0, sizeof *x);
+	x->open = ra_sym(h, "snd_pcm_open", &bad);
+	x->setp = ra_sym(h, "snd_pcm_set_params", &bad);
+	x->writei = ra_sym(h, "snd_pcm_writei", &bad);
+	x->recover = ra_sym(h, "snd_pcm_recover", &bad);
+	x->delay = ra_sym(h, "snd_pcm_delay", &bad);
+	x->drop = ra_sym(h, "snd_pcm_drop", &bad);
+	x->prepare = ra_sym(h, "snd_pcm_prepare", &bad);
+	x->close = ra_sym(h, "snd_pcm_close", &bad);
+	x->errh = dlsym(h, "snd_lib_error_set_handler");
+	if (bad) {
+		free(x);
+		dlclose(h);
+		return HIBR_FAIL;
+	}
+	if (x->errh)
+		x->errh((void *)ra_quiet);
+	e = x->open(&x->pcm, "default", 0, 0);
+	if (e >= 0)
+		e = x->setp(x->pcm, 2, 3, (unsigned)ch, (unsigned)rate, 1, 150000);
+	if (e < 0) {
+		if (x->pcm)
+			x->close(x->pcm);
+		free(x);
+		dlclose(h);
+		return HIBR_FAIL;
+	}
+	a->h = h;
+	a->st = x;
+	a->rate = rate;
+	a->ch = ch;
+	return HIBR_OK;
+}
+
+/* Write sound to ALSA, recovering from an underrun. */
+int ra_awrite(ra_ao *a, const int16_t *s, int n)
+{
+	ra_alsa *x = a->st;
+	long w;
+
+	while (n > 0) {
+		w = x->writei(x->pcm, s, (unsigned long)n);
+		if (w < 0) {
+			if (x->recover(x->pcm, (int)w, 1) < 0)
+				return HIBR_FAIL;
+			continue;
+		}
+		s += w * a->ch;
+		n -= (int)w;
+	}
+	return HIBR_OK;
+}
+
+/* How long until the last sample written is heard. */
+double ra_adelay(ra_ao *a)
+{
+	ra_alsa *x = a->st;
+	long d = 0;
+
+	if (x->delay(x->pcm, &d) < 0 || d < 0)
+		return 0;
+	return (double)d / a->rate;
+}
+
+/* Throw away what is waiting to be played, for a pause or a seek. */
+void ra_aflush(ra_ao *a)
+{
+	ra_alsa *x = a->st;
+
+	x->drop(x->pcm);
+	x->prepare(x->pcm);
+}
+
+/* Close the ALSA device. */
+void ra_aclose(ra_ao *a)
+{
+	ra_alsa *x = a->st;
+
+	if (!x)
+		return;
+	x->drop(x->pcm);
+	x->close(x->pcm);
+	free(x);
+	dlclose(a->h);
+	a->st = 0;
+	a->h = 0;
+}
+
+/* --- AudioQueue, on macOS ------------------------------------------------ */
+
+/* The format AudioQueue is given: AudioStreamBasicDescription. */
+typedef struct ra_asbd ra_asbd;
+struct ra_asbd {
+	double rate;
+	unsigned fmt, flags, bpp, fpp, bpf, ch, bits, res;
+};
+
+/* AudioQueue's own buffer: AudioQueueBuffer. */
+typedef struct ra_aqb ra_aqb;
+struct ra_aqb {
+	unsigned cap;
+	void *data;
+	unsigned size;
+	void *user;
+	unsigned pdcap;
+	void *pd;
+	unsigned pdn;
+};
+
+#ifndef AO_AQBUFS
+#define AO_AQBUFS 3
+#define AO_AQFRAMES 2048
+#endif
+
+/* The AudioQueue output: the queue, its buffers, and a ring the writer
+   fills and the queue's own thread empties. */
+typedef struct ra_aq ra_aq;
+struct ra_aq {
+	void *q;
+	ra_aqb *bufs[AO_AQBUFS];
+	int (*newout)(const ra_asbd *, void (*)(void *, void *, ra_aqb *), void *,
+		      void *, void *, unsigned, void **);
+	int (*alloc)(void *, unsigned, ra_aqb **);
+	int (*enq)(void *, ra_aqb *, unsigned, void *);
+	int (*start)(void *, void *);
+	int (*stop)(void *, int);
+	int (*dispose)(void *, int);
+	int (*reset)(void *);
+	int16_t *ring;
+	size_t cap, rd, wr, fill;
+	pthread_mutex_t mu;
+	pthread_cond_t cv;
+	int ch;
+};
+
+/* The queue wants a buffer filled: from the ring, silence for what the
+   ring does not have, and back on the queue. */
+void ra_qcb(void *user, void *q, ra_aqb *b)
+{
+	ra_aq *x = user;
+	int16_t *d = b->data;
+	size_t want = b->cap / sizeof(int16_t), i;
+
+	pthread_mutex_lock(&x->mu);
+	for (i = 0; i < want; i++) {
+		if (x->fill) {
+			d[i] = x->ring[x->rd];
+			x->rd = (x->rd + 1) % x->cap;
+			x->fill--;
+		} else {
+			d[i] = 0;
+		}
+	}
+	pthread_cond_broadcast(&x->cv);
+	pthread_mutex_unlock(&x->mu);
+	b->size = b->cap;
+	x->enq(q, b, 0, 0);
+}
+
+/* Open an AudioQueue for 16-bit interleaved sound. */
+int ra_qopen(ra_ao *a, int rate, int ch)
+{
+	void *h = dlopen("/System/Library/Frameworks/AudioToolbox.framework/"
+			 "AudioToolbox", RTLD_NOW | RTLD_LOCAL);
+	ra_aq *x;
+	ra_asbd f;
+	int bad = 0, i;
+
+	if (!h)
+		return HIBR_FAIL;
+	x = xm(sizeof *x);
+	memset(x, 0, sizeof *x);
+	x->newout = ra_sym(h, "AudioQueueNewOutput", &bad);
+	x->alloc = ra_sym(h, "AudioQueueAllocateBuffer", &bad);
+	x->enq = ra_sym(h, "AudioQueueEnqueueBuffer", &bad);
+	x->start = ra_sym(h, "AudioQueueStart", &bad);
+	x->stop = ra_sym(h, "AudioQueueStop", &bad);
+	x->dispose = ra_sym(h, "AudioQueueDispose", &bad);
+	x->reset = ra_sym(h, "AudioQueueReset", &bad);
+	if (bad) {
+		free(x);
+		dlclose(h);
+		return HIBR_FAIL;
+	}
+	memset(&f, 0, sizeof f);
+	f.rate = rate;
+	f.fmt = 0x6C70636Du;
+	f.flags = 4u | 8u;
+	f.bpf = f.bpp = (unsigned)ch * 2;
+	f.fpp = 1;
+	f.ch = (unsigned)ch;
+	f.bits = 16;
+	x->ch = ch;
+	x->cap = (size_t)rate * ch / 2;
+	x->ring = xm(x->cap * sizeof *x->ring);
+	pthread_mutex_init(&x->mu, 0);
+	pthread_cond_init(&x->cv, 0);
+	if (x->newout(&f, ra_qcb, x, 0, 0, 0, &x->q)) {
+		free(x->ring);
+		free(x);
+		dlclose(h);
+		return HIBR_FAIL;
+	}
+	for (i = 0; i < AO_AQBUFS; i++) {
+		if (x->alloc(x->q, AO_AQFRAMES * (unsigned)ch * 2, &x->bufs[i]))
+			break;
+		memset(x->bufs[i]->data, 0, x->bufs[i]->cap);
+		x->bufs[i]->size = x->bufs[i]->cap;
+		x->enq(x->q, x->bufs[i], 0, 0);
+	}
+	x->start(x->q, 0);
+	a->h = h;
+	a->st = x;
+	a->rate = rate;
+	a->ch = ch;
+	return HIBR_OK;
+}
+
+/* Put sound in the ring, waiting while it is full. */
+int ra_qwrite(ra_ao *a, const int16_t *s, int n)
+{
+	ra_aq *x = a->st;
+	size_t left = (size_t)n * a->ch;
+
+	pthread_mutex_lock(&x->mu);
+	while (left) {
+		while (x->fill == x->cap)
+			pthread_cond_wait(&x->cv, &x->mu);
+		while (left && x->fill < x->cap) {
+			x->ring[x->wr] = *s++;
+			x->wr = (x->wr + 1) % x->cap;
+			x->fill++;
+			left--;
+		}
+	}
+	pthread_mutex_unlock(&x->mu);
+	return HIBR_OK;
+}
+
+/* The ring and the queue's buffers, in seconds. */
+double ra_qdelay(ra_ao *a)
+{
+	ra_aq *x = a->st;
+	double d;
+
+	pthread_mutex_lock(&x->mu);
+	d = (double)x->fill / a->ch / a->rate;
+	pthread_mutex_unlock(&x->mu);
+	return d + (double)AO_AQBUFS * AO_AQFRAMES / a->rate;
+}
+
+/* Empty the ring. */
+void ra_qflush(ra_ao *a)
+{
+	ra_aq *x = a->st;
+
+	pthread_mutex_lock(&x->mu);
+	x->rd = x->wr = x->fill = 0;
+	pthread_cond_broadcast(&x->cv);
+	pthread_mutex_unlock(&x->mu);
+}
+
+/* Stop and dispose of the queue. */
+void ra_qclose(ra_ao *a)
+{
+	ra_aq *x = a->st;
+
+	if (!x)
+		return;
+	x->stop(x->q, 1);
+	x->dispose(x->q, 1);
+	pthread_mutex_destroy(&x->mu);
+	pthread_cond_destroy(&x->cv);
+	free(x->ring);
+	free(x);
+	dlclose(a->h);
+	a->st = 0;
+	a->h = 0;
+}
+
+/* --- choosing one -------------------------------------------------------- */
+
+/* Use the silent output, or the WAV file one when told a path. */
+int ra_null(ra_ao *a, int rate, int ch, const char *wav)
+{
+	ra_pace *p;
+
+	a->name = wav ? "wav" : "none";
+	a->open = ra_nopen;
+	a->write = ra_nwrite;
+	a->delay = ra_ndelay;
+	a->flush = ra_nflush;
+	a->close = ra_nclose;
+	ra_nopen(a, rate, ch);
+	if (wav) {
+		p = a->st;
+		p->wav = fopen(wav, "wb");
+		if (!p->wav) {
+			a->name = "none";
+			return HIBR_FAIL;
+		}
+		ra_wavhead(a, p);
+	}
+	return HIBR_OK;
+}
+
+/* Open somewhere for sound to go: HIBR_RETRO_AUDIO names it -- pulse,
+   alsa, audioqueue, none, or wav:PATH -- or the platform's own is tried:
+   a sound server first, since it is what follows the device chosen in
+   Control Panel > Sound, then ALSA; no device at all plays silently at
+   the same pace, saying why. */
+int ra_audio(ra_ao *a, int rate, int ch, char **why)
+{
+	const char *w = getenv("HIBR_RETRO_AUDIO");
+
+	memset(a, 0, sizeof *a);
+	*why = 0;
+	if (w && !strncmp(w, "wav:", 4))
+		return ra_null(a, rate, ch, w + 4);
+	if (w && !strcmp(w, "none"))
+		return ra_null(a, rate, ch, 0);
+	if (!w || !strcmp(w, "audioqueue")) {
+		if (ra_qopen(a, rate, ch) == HIBR_OK) {
+			a->name = "audioqueue";
+			a->write = ra_qwrite;
+			a->delay = ra_qdelay;
+			a->flush = ra_qflush;
+			a->close = ra_qclose;
+			return HIBR_OK;
+		}
+	}
+	if (!w || !strcmp(w, "pulse")) {
+		if (ra_popen(a, rate, ch) == HIBR_OK) {
+			a->name = "pulse";
+			a->write = ra_pwrite;
+			a->delay = ra_pdelay;
+			a->flush = ra_pflush;
+			a->close = ra_pclose;
+			return HIBR_OK;
+		}
+	}
+	if (!w || !strcmp(w, "alsa")) {
+		if (ra_aopen(a, rate, ch) == HIBR_OK) {
+			a->name = "alsa";
+			a->write = ra_awrite;
+			a->delay = ra_adelay;
+			a->flush = ra_aflush;
+			a->close = ra_aclose;
+			return HIBR_OK;
+		}
+	}
+	*why = xs("no sound device");
+	return ra_null(a, rate, ch, 0);
+}
