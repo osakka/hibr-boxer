@@ -383,3 +383,21 @@ boxer_menus() {
 	dt_item "Close" w dt_close_focused
 	dt_editmenu
 }
+
+# From a shell: boxer.hibr import PATH... puts each on the shelf and says where.
+if [ -z "${DT_ROWS-}" ]; then
+	case ${1-} in
+	import)
+		shift
+		mkdir -p "$BX_SHELF"
+		for p in "$@"; do
+			b := bx_import "$p" && echo "$b"
+		done
+		;;
+	list)
+		for b in "$BX_SHELF"/*.gamebox; do
+			[ -d "$b" ] && echo "$b"
+		done
+		;;
+	esac
+fi
