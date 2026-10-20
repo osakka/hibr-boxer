@@ -165,7 +165,7 @@ int main(int ac, char **av)
 		unsigned long *tn2, a1, a2;
 
 		r2 = rl_open(core, 0, 0, 0, 0, &err);
-		ck(!r2 && err && strstr(err, "already running"), "the same core file is refused twice");
+		ck(!r2 && err && strstr(err, "already run"), "the same core file is refused twice");
 		free(err);
 		err = 0;
 		ck(system("cp build/testcore.so build/testcore2.so") == 0, "a copy of the core file");

@@ -830,7 +830,7 @@ rl *rl_open(const char *core, const char *game, const char *sysdir, const char *
 	for (i = 0; i < rl_nlive; i++)
 		if (!strcmp(rl_live[i], rp)) {
 			pthread_mutex_unlock(&rl_gmu);
-			*err = rl_dup("that core is already running; a core file runs once in a process");
+			*err = rl_dup("that core has already run in this process; a core file runs once, since DOSBox Pure crashes when loaded again");
 			free(rp);
 			return 0;
 		}
@@ -890,14 +890,6 @@ void rl_close(rl *r)
 		pthread_mutex_unlock(&r->mu);
 		pthread_join(r->th, 0);
 	}
-	pthread_mutex_lock(&rl_gmu);
-	for (i = 0; i < rl_nlive; i++)
-		if (r->live && !strcmp(rl_live[i], r->live)) {
-			free(rl_live[i]);
-			rl_live[i] = rl_live[--rl_nlive];
-			break;
-		}
-	pthread_mutex_unlock(&rl_gmu);
 	for (i = 0; i < r->nvars; i++) {
 		free(r->vars[i].key);
 		free(r->vars[i].val);

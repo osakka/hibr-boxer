@@ -47,7 +47,7 @@ Sound goes to PipeWire/Pulse/ALSA/AudioQueue as in hibr's `media`; `HIBR_RETRO_A
 - **One thread makes every call into a core**, from `retro_set_environment` to `retro_deinit`, because many
   cores insist. The shell thread only posts messages and reads the latest frame.
 - **A core runs in the shell's process.** A crash in a core takes the desktop with it. A core file runs
-  once in a process (a second `open` of the same file is refused, since its globals would be shared); a
+  once in a process, even after `close` (a second `open` of the same file is refused: DOSBox Pure segfaults when loaded a second time, ScummVM does not, but the driver cannot tell which); a
   *copy* of the file is a separate core, and two different cores run together, the driver's callback state
   being per thread. The way out, if any of this bites, is the driver in a child process with frames over a pipe.
 - **`hold` must be longer than the terminal's key-repeat delay to hold a key**, and shorter than a tap should

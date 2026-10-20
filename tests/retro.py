@@ -72,7 +72,7 @@ check(out.split() == ["1", "1"] and "no core named" in err, "a missing core is a
 
 rc, out, err = shell("need retro; a := retro open %s; retro open %s; echo $?; cp build/testcore.so build/testcore2.so; "
                      "b := retro open build/testcore2.so; echo \"two=$a,$b\"; retro list; retro close all" % (CORE, CORE))
-check(out.split()[0] == "1" and "already running" in err and "two=1,2" in out, "the same core twice is refused, a copy is not: %r" % out)
+check(out.split()[0] == "1" and "already run" in err and "two=1,2" in out, "the same core twice is refused, a copy is not: %r" % out)
 rc, out, err = shell("need retro; id := retro open %s; sleep 0.3; retro key $id left; i := retro info $id; "
                      "echo \"aspect=${i[aspect]} core=${i[core]}\"; j := retro pause $id; k := retro info $id; "
                      "echo \"stale=${k[nosuchkey]-absent}\"; retro close $id" % CORE)
