@@ -1,0 +1,6 @@
+build/
+*.so
+*.deb
+*.pkg.tar.*
+/gameboxes/
+*.gamebox/drives/
