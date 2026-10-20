@@ -1,0 +1,281 @@
+#!/usr/bin/env hibr
+#
+# boxerplay -- one DOS game from a gamebox, in a window of its own. The
+# window is opened by the shelf (Boxer, boxer.hibr) with a gamebox folder
+# for its argument; nothing here is meant to be started by hand, so the app
+# is hidden. The game runs in DOSBox Pure, a libretro core, driven by the
+# retro module on a thread of its own, and the frame it makes is drawn by
+# hibr's own renderer: pixels where the terminal takes them, half blocks
+# where it does not.
+#
+# The gamebox says what to run: its gamebox.json names a program (and its
+# arguments) and any CD or floppy images, and engine/dosbox.conf holds the
+# person's own DOSBox settings. At launch they are put together into one
+# run.conf in the runtime folder -- the settings first, then an [autoexec]
+# that mounts drives/c as C: and starts the program -- and DOSBox Pure is
+# given that file as its content, so the game sees a DOS machine set up the
+# way the gamebox asks and nothing outside the gamebox is touched. The
+# game's own saves are written to drives/c, as they would be on a real
+# disk; the core's save states go to saves/.
+#
+# What it cannot do yet: a key's release (the console reports presses only,
+# so a key is held for a short time after each press; hibr #315), and
+# pointer position without a button (#316).
+
+strict
+
+
+app boxerplay "A DOS game from a gamebox" 0.1
+# modules: retro
+command -v dt_app > /dev/null &&
+	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
+command -v dt_keepstate > /dev/null && dt_keepstate boxerplay BP
+
+declare -gA BP BPJ
+BP_CORE="${BP_CORE-dosbox_pure}"
+BP_SYS="${BP_SYS-${XDG_DATA_HOME:-$HOME/.local/share}/hibr/retro/system}"
+
+# The text of one field of a gamebox's gamebox.json, or the default.
+fn bp_get(doc, path, def = "") {
+	local v
+
+	v := json get "$doc" "$path" 2> /dev/null || v=
+	[ -n "$v" ] && ret "$v" || ret "$def"
+}
+
+# The mounts a gamebox lists, as DOSBox commands, a line each: a "cdrom" or
+# "floppy" image, or a plain "dir", on the drive letter it names. A path is
+# the gamebox's own, so it is made whole here.
+fn bp_mounts(box) {
+	local n i d k p t
+
+	n := json len BPJ .mounts 2> /dev/null || n=0
+	for ((i = 0; i < n; i++)); do
+		d := json get BPJ ".mounts[$i].drive" 2> /dev/null || continue
+		k := json get BPJ ".mounts[$i].kind" 2> /dev/null || k=dir
+		p := json get BPJ ".mounts[$i].path" 2> /dev/null || continue
+		case $p in /*) ;; *) p="$box/$p" ;; esac
+		case $k in
+		cdrom) t="imgmount $d \"$p\" -t iso" ;;
+		floppy) t="imgmount $d \"$p\" -t floppy" ;;
+		*) t="mount $d \"$p\"" ;;
+		esac
+		echo "$t"
+	done
+}
+
+# The run.conf of a gamebox, written into dir: its own settings, then the
+# autoexec. The program is a DOS path; its folder is entered first.
+fn bp_conf(box, dir) {
+	local prog args f="$dir/run.conf" d p
+
+	prog := bp_get BPJ .launch.program
+	args := bp_get BPJ .launch.args
+	{
+		echo "# made by Boxer from $box; edit engine/dosbox.conf, not this"
+		[ -r "$box/engine/dosbox.conf" ] && cat "$box/engine/dosbox.conf"
+		echo
+		echo "[autoexec]"
+		echo "@echo off"
+		echo "mount c \"$box/drives/c\""
+		bp_mounts "$box"
+		echo "c:"
+		if [ -n "$prog" ]; then
+			prog=${prog#[Cc]:}
+			d=${prog%\\*}
+			p=${prog##*\\}
+			[ "$d" != "$prog" ] && [ -n "$d" ] && echo "cd $d"
+			echo "$p $args"
+		fi
+	} > "$f"
+	ret "$f"
+}
+
+fn boxerplay_open(int id, arg = "") {
+	local box=$arg dir conf title
+
+	BP[$id]["err"]=
+	BP[$id]["box"]=$box
+	if [ ! -r "$box/gamebox.json" ]; then
+		BP[$id]["err"]="Not a gamebox: $box"
+		return 0
+	fi
+	need retro 2> /dev/null || {
+		BP[$id]["err"]="The retro module is not installed"
+		return 0
+	}
+	json parse BPJ "$(< "$box/gamebox.json")" 2> /dev/null || {
+		BP[$id]["err"]="gamebox.json is not valid"
+		return 0
+	}
+	title := bp_get BPJ .title "${box##*/}"
+	BP[$id]["name"]=${title%.gamebox}
+	dir="${XDG_RUNTIME_DIR:-/tmp}/hibr-boxer-$$-$id"
+	mkdir -p "$dir" "$box/saves" "$BP_SYS" 2> /dev/null
+	conf := bp_conf "$box" "$dir"
+	BP[$id]["dir"]=$dir
+	BP[$id]["aspect"] := bp_get BPJ .display.aspect 4:3
+	BP[$id]["p"] := retro open "$BP_CORE" "$conf" -s "$BP_SYS" -S "$box/saves" 2>&1 ||
+		{
+			BP[$id]["err"]="DOSBox Pure would not start: ${BP[$id]["p"]}"
+			return 0
+		}
+	retro aspect "${BP[$id]["p"]}" "${BP[$id]["aspect"]}" 2> /dev/null
+	BP[$id]["fd"] := retro fd "${BP[$id]["p"]}"
+	command -v console > /dev/null && console watch "${BP[$id]["fd"]}"
+	BP[$id]["t0"]=$EPOCHSECONDS
+	dt_retitle "$id" "${BP[$id]["name"]}"
+}
+
+# What a cell is in pixels, for placing the picture: the terminal's own when
+# pixels are drawn, 1 by 2 for half blocks. Not needed by the module, which
+# keeps the picture's shape itself; the cells it is given are the window's.
+fn boxerplay_draw(int id, int h, int w, int row, int col) {
+	local p=${BP[$id]["p"]} m
+
+	console pen "$DT_INK" "$DT_FACE"
+	if [ -n "${BP[$id]["err"]}" ]; then
+		dt_tput "$id" 2 2 "${BP[$id]["err"]}"
+		return 0
+	fi
+	[ -n "$p" ] || return 0
+	m=${DT_IMGMODE:-auto}
+	case $m in
+	pixels | sixel) m=pixels ;;
+	auto) dt_imgwill auto && m=pixels || m=half ;;
+	*) m=half ;;
+	esac
+	retro size "$p" "$w" "$h" "$m"
+	retro draw "$p" 1 1 -p "w$id" 2> /dev/null
+	BP[$id]["h"]=$h
+	BP[$id]["w"]=$w
+	BP[$id]["at"] := dt_ms
+	return 0
+}
+
+# Clean until the core has made a frame, and frames are held DT_TERMMS apart
+# as the terminal's own output is: a core at 70 a second is drawn at that
+# rate and no faster, the newest frame always.
+fn boxerplay_dirty(int id) {
+	local p=${BP[$id]["p"]} now left
+
+	[ -n "$p" ] || return 1
+	retro wake "$p" 2> /dev/null
+	retro frame "$p" 2> /dev/null || return 1
+	now := dt_ms
+	left=$((${BP[$id]["at"]:-0} + ${DT_TERMMS:-70} - now))
+	if [ "$left" -gt 0 ]; then
+		dt_want "$left"
+		return 1
+	fi
+	return 0
+}
+
+fn boxerplay_idle(int id) {
+	[ -n "${BP[$id]["p"]}" ] && retro wake "${BP[$id]["p"]}" 2> /dev/null
+	return 0
+}
+
+fn boxerplay_key(int id, key) {
+	local p=${BP[$id]["p"]}
+
+	[ -n "$p" ] || return 1
+	if [ "$DT_TERMKEEP" = 1 ] && dt_has dt_keyassigned &&
+	   dt_keyassigned "$key"; then
+		return 1
+	fi
+	retro key "$p" "$key" 2> /dev/null
+	return 0
+}
+
+# The pointer follows a press and a drag; with no button down there is
+# nothing to follow (hibr #316).
+fn boxerplay_mouse(int id, act, btn, int r, int c, mods = "") {
+	local p=${BP[$id]["p"]} b=1
+
+	[ -n "$p" ] || return 0
+	case $btn in middle) b=4 ;; right) b=2 ;; esac
+	case ${act##*-} in
+	press | drag) retro mouse "$p" "$r" "$c" "$b" ;;
+	release) retro mouse "$p" "$r" "$c" 0 ;;
+	esac
+	return 0
+}
+
+fn boxerplay_click(int id, int r, int c, btn = "") {
+	return 0
+}
+
+fn boxerplay_wheel(int id, dir, int r, int c) {
+	local p=${BP[$id]["p"]} wh=1
+
+	[ -n "$p" ] || return 0
+	[ "$dir" = up ] && wh=-1
+	retro mouse "$p" "$r" "$c" 0 "$wh"
+	return 0
+}
+
+# Where the core's state is kept between sessions: the gamebox's saves/.
+fn bp_state(int id) {
+	ret "${BP[$id]["box"]}/saves/state.sav"
+}
+
+fn bp_save(int id) {
+	local f
+
+	f := bp_state "$id"
+	retro save "${BP[$id]["p"]}" "$f" 2> /dev/null ||
+		dt_notify "Boxer" "The game gave no state to save" 2> /dev/null
+	return 0
+}
+
+fn bp_load(int id) {
+	local f
+
+	f := bp_state "$id"
+	[ -r "$f" ] && retro load "${BP[$id]["p"]}" "$f" 2> /dev/null
+	return 0
+}
+
+fn bp_toggle(int id) {
+	retro toggle "${BP[$id]["p"]}" 2> /dev/null
+	return 0
+}
+
+fn bp_reset(int id) {
+	retro reset "${BP[$id]["p"]}" 2> /dev/null
+	return 0
+}
+
+fn boxerplay_close(int id) {
+	local fd=${BP[$id]["fd"]}
+
+	[ -n "$fd" ] && command -v console > /dev/null && console unwatch "$fd"
+	[ -n "${BP[$id]["p"]}" ] && retro close "${BP[$id]["p"]}" 2> /dev/null
+	[ -n "${BP[$id]["dir"]}" ] && command rm -rf -- "${BP[$id]["dir"]}"
+	unset "BP[$id]"
+}
+
+# Restart Desktop: the core runs in this process, which the restart ends,
+# so the game is started again from its gamebox on the first frame after.
+fn boxerplay_stash(int id, dir) {
+	BP[$id]["p"]=
+	BP[$id]["fd"]=
+	return 0
+}
+fn boxerplay_resume(int id) {
+	boxerplay_open "$id" "${BP[$id]["box"]}"
+	return 0
+}
+
+boxerplay_menus() {
+	dt_menu "File"
+	dt_item "Save State" s bp_save "$DT_FOCUS"
+	dt_item "Load State" l bp_load "$DT_FOCUS"
+	dt_sep
+	dt_item "Close Window" w dt_close_focused
+	dt_editmenu
+	dt_menu "Game"
+	dt_item "Pause" p bp_toggle "$DT_FOCUS"
+	dt_item "Restart" r bp_reset "$DT_FOCUS"
+}

@@ -4,7 +4,7 @@ CFLAGS = -g -Wall
 INC = -Imods/retro -I$(HIBR)/include
 B = build
 
-.PHONY: all check check-retro clean
+.PHONY: all check check-retro check-boxer clean
 all: $(B)/testcore.so $(B)/rl_harness
 
 $(B):
@@ -23,6 +23,9 @@ check: all
 
 check-retro: all
 	python3 -I tests/retro.py
+
+check-boxer: $(B)/retro.so $(B)/testcore.so
+	python3 tests/boxer.py
 
 clean:
 	rm -rf $(B)
