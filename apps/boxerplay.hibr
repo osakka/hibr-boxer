@@ -36,12 +36,38 @@ declare -gA BP BPJ
 BP_CORE="${BP_CORE-dosbox_pure}"
 BP_SYS="${BP_SYS-${XDG_DATA_HOME:-$HOME/.local/share}/hibr/retro/system}"
 
+# What Control Panel > Boxer sets, for every game; a game's own settings
+# (its Info drawer in the shelf) override the picture, the shape and what
+# DOSBox is told. BX_FULLKEY is the key that fills the display and gives it
+# back, and is the game's rather than the desktop's.
+BX_PIC="${BX_PIC-follow}"
+BX_ASPECT="${BX_ASPECT-4:3}"
+BX_FULLKEY="${BX_FULLKEY-f11}"
+BX_HOLD="${BX_HOLD-120}"
+BX_SOUND="${BX_SOUND-on}"
+BX_MOUSE="${BX_MOUSE-direct}"
+command -v dt_keep > /dev/null && dt_keep BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE
+
 # The text of one field of a gamebox's gamebox.json, or the default.
 fn bp_get(doc, path, def = "") {
 	local v
 
 	v := json get "$doc" "$path" 2> /dev/null || v=
 	[ -n "$v" ] && ret "$v" || ret "$def"
+}
+
+# How the mouse reaches DOS, as DOSBox Pure's own setting for it. The
+# terminal tells a position only while a button is down, so a mouse that
+# moves by itself cannot be had: direct puts DOS's pointer where the
+# terminal's is, which is what a point-and-click game wants; relative moves
+# it by the distance between presses, for a game that wants that and will
+# do little; off hands DOS none.
+fn bp_mousemode(m) {
+	case $m in
+	relative) ret virtual ;;
+	off) ret false ;;
+	*) ret direct ;;
+	esac
 }
 
 # The mounts a gamebox lists, as DOSBox commands, a line each: a "cdrom" or
@@ -65,6 +91,20 @@ fn bp_mounts(box) {
 	done
 }
 
+# What the game's own settings tell DOSBox, as sections after the person's
+# own conf, so they win: the speed (cycles), the graphics card and the sound.
+fn bp_tune() {
+	local v
+
+	v := bp_get BPJ .cpu.cycles
+	[ -n "$v" ] && [ "$v" != default ] && printf '[cpu]\ncycles=%s\n' "$v"
+	v := bp_get BPJ .machine
+	[ -n "$v" ] && [ "$v" != default ] && printf '[dosbox]\nmachine=%s\n' "$v"
+	v := bp_get BPJ .sound.card
+	[ -n "$v" ] && [ "$v" != default ] && printf '[sblaster]\nsbtype=%s\n' "$v"
+	return 0
+}
+
 # The run.conf of a gamebox, written into dir: its own settings, then the
 # autoexec. The program is a DOS path; its folder is entered first.
 fn bp_conf(box, dir) {
@@ -77,6 +117,7 @@ fn bp_conf(box, dir) {
 		[ -r "$box/engine/dosbox.conf" ] && awk '
 			/^[ \t]*\[/ { skip = (tolower($0) ~ /^[ \t]*\[autoexec\]/) }
 			!skip' "$box/engine/dosbox.conf"
+		bp_tune
 		echo
 		echo "[autoexec]"
 		echo "@echo off"
@@ -96,7 +137,7 @@ fn bp_conf(box, dir) {
 }
 
 fn boxerplay_open(int id, arg = "") {
-	local box=$arg dir conf title
+	local box=$arg dir conf title mm
 
 	BP[$id]["err"]=
 	BP[$id]["box"]=$box
@@ -119,13 +160,22 @@ fn boxerplay_open(int id, arg = "") {
 	mkdir -p "$dir" "$box/saves" "$BP_SYS" 2> /dev/null
 	conf := bp_conf "$box" "$dir"
 	BP[$id]["dir"]=$dir
-	BP[$id]["aspect"] := bp_get BPJ .display.aspect 4:3
-	BP[$id]["p"] := retro open "$BP_CORE" "$conf" -s "$BP_SYS" -S "$box/saves" 2>&1 ||
+	BP[$id]["aspect"] := bp_get BPJ .display.aspect default
+	[ "${BP[$id]["aspect"]}" = default ] && BP[$id]["aspect"]=$BX_ASPECT
+	BP[$id]["pic"] := bp_get BPJ .display.render default
+	[ "${BP[$id]["pic"]}" = default ] && BP[$id]["pic"]=$BX_PIC
+	if [ "$BX_SOUND" = off ]; then export HIBR_RETRO_AUDIO=none; fi
+	mm := bp_get BPJ .mouse default
+	[ "$mm" = default ] && mm=$BX_MOUSE
+	mm := bp_mousemode "$mm"
+	BP[$id]["p"] := retro open "$BP_CORE" "$conf" -s "$BP_SYS" -S "$box/saves" \
+		-o "dosbox_pure_mouse_input=$mm" 2>&1 ||
 		{
 			BP[$id]["err"]="DOSBox Pure would not start: ${BP[$id]["p"]}"
 			return 0
 		}
 	retro aspect "${BP[$id]["p"]}" "${BP[$id]["aspect"]}" 2> /dev/null
+	retro hold "${BP[$id]["p"]}" "$BX_HOLD" 2> /dev/null
 	BP[$id]["fd"] := retro fd "${BP[$id]["p"]}"
 	command -v console > /dev/null && console watch "${BP[$id]["fd"]}"
 	BP[$id]["t0"]=$EPOCHSECONDS
@@ -144,7 +194,8 @@ fn boxerplay_draw(int id, int h, int w, int row, int col) {
 		return 0
 	fi
 	[ -n "$p" ] || return 0
-	m=${DT_IMGMODE:-auto}
+	m=${BP[$id]["pic"]:-follow}
+	[ "$m" = follow ] && m=${DT_IMGMODE:-auto}
 	case $m in
 	pixels | sixel) m=pixels ;;
 	auto) dt_imgwill auto && m=pixels || m=half ;;
@@ -185,6 +236,10 @@ fn boxerplay_key(int id, key) {
 	local p=${BP[$id]["p"]}
 
 	[ -n "$p" ] || return 1
+	if [ "$key" = "$BX_FULLKEY" ]; then
+		dt_zoom "$id"
+		return 0
+	fi
 	if [ "$DT_TERMKEEP" = 1 ] && dt_has dt_keyassigned &&
 	   dt_keyassigned "$key"; then
 		return 1

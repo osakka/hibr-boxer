@@ -240,6 +240,29 @@ if dbp and os.path.exists(dbp):
         beside = lambda p: sum(1 for y in range(16) for x in range(130, 170) if p[(y * w + x) * 3] > 128)
         check("a key reaches the program: it was waiting for one, and ends, the prompt following its text",
               px2 and beside(px2) > 10 and beside(px) == 0, (beside(px2), beside(px)) if px2 else "no frame")
+        # The mouse, through the desktop's own window: a program that prints X when the left button is down.
+        cb = gamebox("Clicker")
+        shutil.rmtree(cb + "/drives/c")
+        os.makedirs(cb + "/drives/c")
+        open(cb + "/drives/c/CLICK.COM", "wb").write(
+            b"\xb8\x00\x00\xcd\x33\xb8\x01\x00\xcd\x33\xb8\x03\x00\xcd\x33\xf6\xc3\x01\x74\xf6"
+            b"\xb4\x02\xb2\xdb\xcd\x21\xb4\x02\xb2\xdb\xcd\x21\xb8\x00\x4c\xcd\x21")
+        open(cb + "/gamebox.json", "w").write('{"gamebox":1,"title":"Clicker","launch":{"program":"C:\\\\CLICK.COM"}}')
+        t = desk("", cb, False, {"BP_CORE": dbp})
+        for _ in range(40):
+            t.collect(0.25)
+            if "▀" in t.screen().text():
+                break
+        t.collect(6.0)
+        lit = lambda sc: sum(1 for r in range(2, 5) for c in range(9, 18)
+                             if any(v and v != "#000000" for v in (sc.style(r, c).get("fg"), sc.style(r, c).get("bg"))))
+        before = lit(t.screen())
+        t.send(sx.press(10, 30) + sx.release(10, 30))
+        t.collect(2.0)
+        after = lit(t.screen())
+        check("a click in the window reaches DOS: the program that waits for the left button prints its X",
+              after > before, (before, after))
+        t.close()
         t = desk("", hb_, True, {"BP_CORE": dbp})
         for _ in range(60):
             t.collect(0.25)

@@ -5,7 +5,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-/* Run a core on a game for a while and write its latest frame as a PPM: rl_shot core game sysdir savedir secs out.ppm [keycode]: with a keycode, that RETROK_ key is tapped
+/* With MOUSE=x,y,buttons in the environment, once the program has drawn, the pointer is put there (in the core's
+   -32767..32767) for a moment before the shot is taken.
+   Run a core on a game for a while and write its latest frame as a PPM: rl_shot core game sysdir savedir secs out.ppm [keycode]: with a keycode, that RETROK_ key is tapped
    once the program has drawn something, and the shot is taken two seconds later; secs is then the longest to wait for it. */
 
 /* How many pixels of a frame are bright: a program that has drawn something. */
@@ -22,7 +24,7 @@ int rl_lit(const unsigned char *f, int w, int h)
 int main(int argc, char **argv)
 {
 	char *err = 0;
-	const char *const opts[] = { 0 };
+	const char *opts[] = { 0, 0 };
 	rl *r;
 	const unsigned char *f;
 	int w, h;
@@ -33,12 +35,33 @@ int main(int argc, char **argv)
 		fprintf(stderr, "usage: rl_shot core game sysdir savedir secs out.ppm\n");
 		return 2;
 	}
-	r = rl_open(argv[1], argv[2], argv[3], argv[4], opts, &err);
+	opts[0] = getenv("OPT");
+	r = rl_open(argv[1], argv[2], argv[3], argv[4], (const char *const *)opts, &err);
 	if (!r) {
 		fprintf(stderr, "open: %s\n", err ? err : "failed");
 		return 1;
 	}
-	if (argc > 7) {
+	if (getenv("MOUSE")) {
+		int i, mx = 0, my = 0, mb = 0, n = atoi(argv[5]) * 10;
+
+		sscanf(getenv("MOUSE"), "%d,%d,%d", &mx, &my, &mb);
+		for (i = 0; i < n; i++) {
+			f = rl_lock(r, &w, &h, &seq);
+			if (f && rl_lit(f, w, h) > 50)
+				break;
+			usleep(100000);
+		}
+		usleep(500000);
+		rl_pointer(r, mx, my, mb, 0);
+		if (getenv("MOUSETAP")) {
+			rl_pointer(r, mx, my, 0, 0);
+		} else {
+			usleep(600000);
+			if (mb)
+				rl_pointer(r, mx, my, 0, 0);
+		}
+		usleep(600000);
+	} else if (argc > 7) {
 		int i, n = atoi(argv[5]) * 10;
 
 		for (i = 0; i < n; i++) {

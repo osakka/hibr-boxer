@@ -107,7 +107,8 @@ struct rl {
 	rl_ke *ev, *hold;
 	int nev, nhold;
 	retro_keyboard_event_t kcb;
-	int px, py, pbtn, lpx, lpy, havep, mdx, mdy, wup, wdown;
+	int px, py, pbtn, pwant, lpx, lpy, havep, mdx, mdy, wup, wdown;
+	double pdown, prel;
 	rl_var *vars;
 	int nvars, vdirty;
 	char **popt;
@@ -596,8 +597,9 @@ int16_t rl_input(unsigned port, unsigned dev, unsigned idx, unsigned id)
 			v = r->px;
 		else if (id == RETRO_DEVICE_ID_POINTER_Y)
 			v = r->py;
-		else if (id == RETRO_DEVICE_ID_POINTER_PRESSED)
+		else if (id == RETRO_DEVICE_ID_POINTER_PRESSED) {
 			v = r->pbtn & 1;
+		}
 		else if (id == RETRO_DEVICE_ID_POINTER_COUNT)
 			v = r->havep;
 		break;
@@ -837,6 +839,12 @@ void *rl_thread(void *arg)
 		}
 		r->aud = 0;
 		r->f.run();
+		pthread_mutex_lock(&r->mu);
+		if (r->prel && ra_now() >= r->prel) {
+			r->pbtn = r->pwant;
+			r->prel = 0;
+		}
+		pthread_mutex_unlock(&r->mu);
 		rl_count(r);
 		next += 1.0 / r->fps;
 		if (r->aud || ra_now() > next + 0.25)
@@ -1107,7 +1115,17 @@ void rl_pointer(rl *r, int x, int y, int buttons, int wheel)
 	r->lpx = r->px = x;
 	r->lpy = r->py = y;
 	r->havep = 1;
-	r->pbtn = buttons;
+	/* A press is held for a few frames at least, so a game that polls the button sees a quick tap. */
+	if (buttons && !r->pbtn)
+		r->pdown = ra_now();
+	if (!buttons && r->pbtn && ra_now() - r->pdown < 0.05) {
+		r->pwant = 0;
+		r->prel = r->pdown + 0.05;
+	} else {
+		r->pbtn = buttons;
+		r->pwant = buttons;
+		r->prel = 0;
+	}
 	if (wheel > 0)
 		r->wup += wheel;
 	else if (wheel < 0)
