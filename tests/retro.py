@@ -106,5 +106,26 @@ check(keys_down("left") == 1, "a plain key is one key down: %d" % keys_down("lef
 check(keys_down("shift-left") == 2, "shift-left is two: %d" % keys_down("shift-left"))
 check(keys_down("A") == 2, "a capital is two: %d" % keys_down("A"))
 check(keys_down("ctrl-left") == 2, "ctrl-left is two: %d" % keys_down("ctrl-left"))
+# A click is given in the pane's own cells, as an app is told it, wherever the pane is on the screen: the centre of
+# the picture is the centre of the core's range whether the pane is at the corner or in the middle of the screen,
+# and a click a quarter of the way across is a quarter of the way across.
+def pointer(row, col, prow, pcol, gfx):
+    sc = ("need console retro; console open || exit 1; console pane w1 %d %d 20 60; id := retro open %s; sleep 0.3; "
+          "retro size $id 60 20 %s; retro frame $id; retro draw $id 1 1 -p w1; retro mouse $id %d %d 1; sleep 0.1; "
+          "i := retro info $id; console close; printf 'RESULT %%s\\n' \"${i[pointer]}\"; retro close $id"
+          % (prow, pcol, CORE, "half" if gfx is None else "pixels", row, col))
+    t = tty(sc, gfx).decode("utf-8", "replace")
+    r = t[t.rindex("RESULT "):].split("\n")[0].split() if "RESULT " in t else []
+    return [int(v) for v in r[1:4]] if len(r) >= 4 else None
+
+
+for gfx in (None, "kitty"):
+    c = pointer(10, 30, 2, 1, gfx)
+    far = pointer(10, 30, 12, 20, gfx)
+    check(bool(c) and abs(c[0]) < 3000 and abs(c[1]) < 3000,
+          "the picture's centre is the range's centre, in a pane at the corner (%s): %s" % (gfx, c))
+    check(bool(far and c) and abs(far[0] - c[0]) < 1500 and abs(far[1] - c[1]) < 1500,
+          "and in a pane in the middle of the screen: the same (%s): %s" % (gfx, far))
+
 print("\n%d failed" % fails)
 sys.exit(1 if fails else 0)

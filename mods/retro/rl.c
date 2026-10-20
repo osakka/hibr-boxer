@@ -1046,6 +1046,9 @@ void rl_info(rl *r, rl_st *st)
 	pthread_mutex_unlock(&r->fmu);
 	pthread_mutex_lock(&r->mu);
 	st->paused = r->paused;
+	st->px = r->px;
+	st->py = r->py;
+	st->pbtn = r->pbtn;
 	st->ended = r->ended;
 	st->fps = r->fps;
 	st->rate = r->rate;

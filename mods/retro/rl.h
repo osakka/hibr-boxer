@@ -13,7 +13,7 @@ typedef struct rl rl;
 /* What a running core says about itself, read without stopping it. */
 typedef struct rl_st rl_st;
 struct rl_st {
-	int w, h, paused, ended;
+	int w, h, paused, ended, px, py, pbtn;
 	double fps, rate, aspect;
 	unsigned long frames, seq;
 	char *name, *ver, *err, *sound;

@@ -19,7 +19,7 @@ struct rt_pl {
 	int cols, rows, mode, hold, drew;
 	double aspect;
 	unsigned long drawn;
-	int orow, ocol, tw, th;
+	int orow, ocol, tw, th, pr, pc;
 };
 
 vec rt_pls;
@@ -357,6 +357,8 @@ int rt_draw(sh *s, rt_pl *p, int ac, char **av)
 	}
 	p->drawn = seq;
 	p->drew = drew;
+	p->pr = pane ? prow : 0;
+	p->pc = pane ? pcol : 0;
 	p->orow = row;
 	p->ocol = col;
 	p->tw = tw;
@@ -386,6 +388,12 @@ int rt_info(sh *s, rt_pl *p)
 	rt_field(s, "output", st.sound);
 	rt_field(s, "mode", p->mode == 0 ? "pixels" : "half");
 	rt_field(s, "drawn", p->drew ? "pixels" : "cells");
+	{
+		char pt[64];
+
+		snprintf(pt, sizeof pt, "%d %d %d", st.px, st.py, st.pbtn);
+		rt_field(s, "pointer", pt);
+	}
 	rt_field(s, "error", st.err);
 	rl_stfree(&st);
 	return HIBR_OK;
@@ -605,8 +613,8 @@ int m_retro(sh *s, int ac, char **av)
 			x = 0;
 			y = 0;
 		} else {
-			x = (int)(((col - p->ocol + 0.5) / p->tw) * 65534 - 32767);
-			y = (int)(((row - p->orow + 0.5) / p->th) * 65534 - 32767);
+			x = (int)(((col + p->pc - p->ocol + 0.5) / p->tw) * 65534 - 32767);
+			y = (int)(((row + p->pr - p->orow + 0.5) / p->th) * 65534 - 32767);
 			x = x < -32767 ? -32767 : x > 32767 ? 32767 : x;
 			y = y < -32767 ? -32767 : y > 32767 ? 32767 : y;
 		}
