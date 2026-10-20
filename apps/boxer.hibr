@@ -1,0 +1,242 @@
+#!/usr/bin/env hibr
+#
+# boxer -- a shelf of DOS games, one box to a game, in the way Boxer shelves
+# them on a Mac. A game lives in a folder of its own, NAME.gamebox, holding
+# the game's drive C, its box art (cover.png), the person's DOSBox settings
+# and the game's saves; the shelf is a folder of them, and this window shows
+# it as a grid of covers. Clicking one selects it, a double click or Enter
+# plays it, in a window of its own (boxerplay).
+#
+# Nothing registers a game: the shelf is scanned, so a box copied in, rsync'd
+# or untarred is on the shelf the next time it is refreshed, and a box taken
+# out is gone. The default shelf is $XDG_DATA_HOME/hibr/shelf; BX_SHELF
+# names another.
+#
+# A game with no cover.png gets a tile of its own, coloured from its name.
+
+strict
+
+
+app boxer "DOS games on a shelf" 0.1
+# modules: img retro
+# part: apps/boxerplay.hibr
+command -v dt_app > /dev/null && dt_app boxer "Boxer" 40 100 "" "▣"
+command -v dt_keepstate > /dev/null && dt_keepstate boxer BX
+
+declare -gA BX BXJ
+BX_SHELF="${BX_SHELF-${XDG_DATA_HOME:-$HOME/.local/share}/hibr/shelf}"
+command -v dt_keep > /dev/null && dt_keep BX_SHELF
+
+# The size of a tile: the cover is TH - 2 rows under a title row.
+BX_TW=22
+BX_TH=13
+BX_TINT=(red green yellow blue magenta cyan)
+
+# The shelf, read again: each box on it, its folder and its title, by number.
+fn bx_scan(int id) {
+	local d t k n=0
+
+	for d in "$BX_SHELF"/*.gamebox; do
+		[ -d "$d" ] || continue
+		t=${d##*/}
+		t=${t%.gamebox}
+		if [ -r "$d/gamebox.json" ] &&
+		   json parse BXJ "$(< "$d/gamebox.json")" 2> /dev/null; then
+			t := bx_title "$t"
+		fi
+		k := bx_tint "$t"
+		BX[$id]["box$n"]=$d
+		BX[$id]["tint$n"]=$k
+		BX[$id]["ttl$n"]=$t
+		n=$((n + 1))
+	done
+	BX[$id]["n"]=$n
+	[ "${BX[$id]["sel"]:-0}" -ge "$n" ] && BX[$id]["sel"]=$((n > 0 ? n - 1 : 0))
+	return 0
+}
+
+# A tint from a name: one of the six, the same name the same one every time.
+fn bx_tint(name) {
+	local k
+
+	k=$(printf '%s' "$name" | cksum)
+	ret "${BX_TINT[$((${k%% *} % ${#BX_TINT[@]}))]}"
+}
+
+# A box's own title, from the document just parsed, else the folder's name.
+fn bx_title(def) {
+	local v
+
+	v := json get BXJ .title 2> /dev/null || v=
+	[ -n "$v" ] && ret "$v" || ret "$def"
+}
+
+fn boxer_open(int id, arg = "") {
+	[ -n "$arg" ] && [ -d "$arg" ] && BX_SHELF=$arg
+	mkdir -p "$BX_SHELF" 2> /dev/null
+	BX[$id]["sel"]=0
+	BX[$id]["top"]=0
+	bx_scan "$id"
+}
+
+# How many tiles go across a window w wide.
+fn bx_cols(int w) {
+	local n=$(((w - 1) / BX_TW))
+
+	[ "$n" -lt 1 ] && n=1
+	ret "$n"
+}
+
+# A tile of the game's own when there is no cover: a colour taken from the
+# title, the title in it, wrapped.
+fn bx_card(int id, int r, int c, title, tint) {
+	local i=0 line rest=$title n=$((BX_TW - 4))
+
+	console pen black "$tint"
+	console fill -p "w$id" "$r" "$c" $((BX_TH - 3)) $((BX_TW - 2)) " "
+	while [ -n "$rest" ] && [ "$i" -lt $((BX_TH - 5)) ]; do
+		line=${rest:0:$n}
+		rest=${rest:$n}
+		console put -p "w$id" $((r + 1 + i)) $((c + 1)) "$line"
+		i=$((i + 1))
+	done
+	return 0
+}
+
+# One tile at row r, column c: the cover, then the title, which is shown as
+# selected when it is.
+fn bx_tile(int id, int i, int r, int c) {
+	local box=${BX[$id]["box$i"]} t=${BX[$id]["ttl$i"]}
+
+	if [ -r "$box/cover.png" ] && dt_has img; then
+		dt_imgm
+		img draw "$box/cover.png" "$r" "$c" $((BX_TH - 3)) $((BX_TW - 2)) \
+			"${DT_IMGARG[@]}" -p "w$id" 2> /dev/null || bx_card "$id" "$r" "$c" "$t" "${BX[$id]["tint$i"]}"
+	else
+		bx_card "$id" "$r" "$c" "$t" "${BX[$id]["tint$i"]}"
+	fi
+	if [ "$i" = "${BX[$id]["sel"]}" ]; then
+		console pen "$DT_SELINK" "$DT_ACTIVE"
+	else
+		console pen "$DT_INK" "$DT_FACE"
+	fi
+	console fill -p "w$id" $((r + BX_TH - 3)) "$c" 1 $((BX_TW - 2)) " "
+	console put -p "w$id" $((r + BX_TH - 3)) "$c" "${t:0:$((BX_TW - 2))}"
+	return 0
+}
+
+fn boxer_draw(int id, int h, int w, int row, int col) {
+	local n=${BX[$id]["n"]:-0} cols rows top i r c
+
+	console pen "$DT_INK" "$DT_FACE"
+	if [ "$n" -eq 0 ]; then
+		console pen "$DT_DIM" "$DT_FACE"
+		dt_tput "$id" 2 3 "No games on this shelf yet."
+		dt_tput "$id" 4 3 "A game is a folder named NAME.gamebox in:"
+		dt_tput "$id" 5 5 "$BX_SHELF"
+		return 0
+	fi
+	cols := bx_cols "$w"
+	rows=$(((h - 1) / BX_TH))
+	[ "$rows" -lt 1 ] && rows=1
+	BX[$id]["cols"]=$cols
+	BX[$id]["rows"]=$rows
+	top=${BX[$id]["top"]:-0}
+	for ((i = top * cols; i < n && i < (top + rows) * cols; i++)); do
+		r=$((2 + ((i / cols) - top) * BX_TH))
+		c=$((2 + (i % cols) * BX_TW))
+		bx_tile "$id" "$i" "$r" "$c"
+	done
+	return 0
+}
+
+# Move the selection to tile k, and the view to hold it.
+fn bx_select(int id, int k) {
+	local n=${BX[$id]["n"]:-0} cols=${BX[$id]["cols"]:-1} rows=${BX[$id]["rows"]:-1} top t
+
+	[ "$n" -gt 0 ] || return 0
+	[ "$k" -lt 0 ] && k=0
+	[ "$k" -ge "$n" ] && k=$((n - 1))
+	BX[$id]["sel"]=$k
+	top=${BX[$id]["top"]:-0}
+	t=$((k / cols))
+	[ "$t" -lt "$top" ] && top=$t
+	[ "$t" -ge $((top + rows)) ] && top=$((t - rows + 1))
+	BX[$id]["top"]=$top
+	return 0
+}
+
+# Play the selected game in a window of its own.
+fn bx_play(int id) {
+	local k=${BX[$id]["sel"]:-0} box=${BX[$id]["box$k"]}
+
+	[ -n "$box" ] || return 0
+	dt_launch boxerplay "$box" > /dev/null ||
+		dt_notep low "Boxer cannot open the game window"
+	return 0
+}
+
+fn bx_refresh(int id) {
+	bx_scan "$id"
+	return 0
+}
+
+fn boxer_key(int id, key) {
+	local k=${BX[$id]["sel"]:-0} cols=${BX[$id]["cols"]:-1}
+
+	case $key in
+	left) bx_select "$id" $((k - 1)) ;;
+	right) bx_select "$id" $((k + 1)) ;;
+	up) bx_select "$id" $((k - cols)) ;;
+	down) bx_select "$id" $((k + cols)) ;;
+	home) bx_select "$id" 0 ;;
+	end) bx_select "$id" "${BX[$id]["n"]:-0}" ;;
+	enter) bx_play "$id" ;;
+	r) bx_refresh "$id" ;;
+	*) return 1 ;;
+	esac
+	return 0
+}
+
+# A press picks the tile under it; a second press on it plays it.
+fn boxer_click(int id, int r, int c, btn = "") {
+	local cols=${BX[$id]["cols"]:-1} top=${BX[$id]["top"]:-0} k tr tc
+
+	[ "${BX[$id]["n"]:-0}" -gt 0 ] || return 0
+	[ "$r" -ge 2 ] && [ "$c" -ge 2 ] || return 0
+	tr=$(((r - 2) / BX_TH))
+	tc=$(((c - 2) / BX_TW))
+	[ "$tc" -lt "$cols" ] || return 0
+	k=$(((top + tr) * cols + tc))
+	[ "$k" -lt "${BX[$id]["n"]}" ] || return 0
+	bx_select "$id" "$k"
+	if [ "$btn" = double ] || dt_isdbl "$id" 2> /dev/null; then
+		bx_play "$id"
+	fi
+	return 0
+}
+
+fn boxer_wheel(int id, dir, int r, int c) {
+	local top=${BX[$id]["top"]:-0} cols=${BX[$id]["cols"]:-1} n=${BX[$id]["n"]:-0}
+	local last=$(((n - 1) / cols))
+
+	case $dir in
+	up) [ "$top" -gt 0 ] && top=$((top - 1)) ;;
+	down) [ "$top" -lt "$last" ] && top=$((top + 1)) ;;
+	esac
+	BX[$id]["top"]=$top
+	return 0
+}
+
+fn boxer_close(int id) {
+	unset "BX[$id]"
+}
+
+boxer_menus() {
+	dt_menu "File"
+	dt_item "Play" p bx_play "$DT_FOCUS"
+	dt_item "Refresh" r bx_refresh "$DT_FOCUS"
+	dt_sep
+	dt_item "Close" w dt_close_focused
+	dt_editmenu
+}

@@ -77,5 +77,60 @@ for pix in (True, False):
     check("the window wears the gamebox's title", "Test Game" in sc.text(), sc)
     t.close()
 
+
+def png(path, w, h, rgb):
+    """A plain-colour PNG, written by hand."""
+    import struct, zlib
+
+    def chunk(t, d):
+        c = struct.pack(">I", len(d)) + t + d
+        return c + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+    raw = b"".join(b"\0" + bytes(rgb) * w for _ in range(h))
+    open(path, "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                           + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+# The shelf: three boxes, one with a cover; the grid shows their titles, the arrow keys move the selection and
+# Enter opens the selected game in a window of its own.
+shelf = os.path.join(D, "shelf")
+shutil.rmtree(shelf, True)
+os.makedirs(shelf)
+for nm in ("Alpha Quest", "Beta Racer", "Gamma Blast"):
+    b = gamebox(nm)
+    shutil.move(b, os.path.join(shelf, nm + ".gamebox"))
+png(os.path.join(shelf, "Beta Racer.gamebox", "cover.png"), 60, 80, (200, 40, 40))
+
+
+def shelfdesk(pix):
+    p = sx.scratch("boxer.hibr")
+    open(p, "w").write(
+        "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/boxer.hibr\n"
+        "dt_open\nBID := dt_launch boxer \"%s\"\ndt_run\ndt_close\n"
+        % (load("console", "img", RETRO), DESK, ROOT, ROOT, shelf))
+    kw = dict(cellw=8, cellh=16, caps=["kitty"]) if pix else {}
+    return Term(p, rows=40, cols=100, settle=1.0, env=ENVBASE, **kw)
+
+
+t = shelfdesk(True)
+t.collect(2.0)
+sc = t.screen()
+check("the shelf lists every box by its title",
+      all(n in sc.text() for n in ("Alpha Quest", "Beta Racer", "Gamma Blast")), sc)
+t.send(b"r")
+t.collect(1.0)
+check("a cover.png is drawn as a picture", t.raw.count(b"a=T") >= 1, t.raw.count(b"a=T"))
+t.send(b"\x1b[C")
+t.collect(0.8)
+sc2 = t.screen()
+check("the arrow key moves the selection", sc2.style(sc.find("Beta Racer")[0], sc.find("Beta Racer")[1]) !=
+      sc.style(sc.find("Beta Racer")[0], sc.find("Beta Racer")[1]), (sc.find("Beta Racer"),))
+t.send(b"\r")
+for _ in range(20):
+    t.collect(0.3)
+    if t.screen().text().count("Beta Racer") >= 2:
+        break
+check("Enter opens the selected game in a window of its own", t.screen().text().count("Beta Racer") >= 2, t.screen())
+t.close()
+
 shutil.rmtree(D, True)
 report()
