@@ -1,4 +1,6 @@
-# hibr retro gaming — design sketch
+# hibr-boxer — design sketch
+
+> **Superseded in part by [ADR 0002](adr/0002-dos-only.md): ScummVM is dropped and the project is DOS-only, named hibr-boxer.** The text below was written for both engines; wherever it says ScummVM, read it as history. The gamebox keeps an `engine` field so a second core can return as an additive package.
 
 Status: sketch, 2026-10-20. Written against hibr 0.99.268 (module ABI 16).
 Every claim about hibr below was read from its tree (`docs/display.md`,

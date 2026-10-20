@@ -668,4 +668,4 @@ const hibr_bi retro_bi[] = {
 	HIBR_BI_END
 };
 
-HIBR_MODULE("retro", "0.1", "a libretro frontend: DOSBox, ScummVM and the rest as cores", retro_bi, rt_ini, rt_fini);
+HIBR_MODULE("retro", "0.1", "a libretro frontend: DOSBox and the rest as cores", retro_bi, rt_ini, rt_fini);

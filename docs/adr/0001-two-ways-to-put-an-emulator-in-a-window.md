@@ -1,6 +1,6 @@
 # 0001 — Two ways to put an emulator in a window
 
-Status: accepted (2026-10-20); the gate passed, see docs/spike-1-frame-rate.md
+Status: accepted (2026-10-20); the gate passed, see docs/spike-1-frame-rate.md. ScummVM later dropped: ADR 0002.
 
 ## Context
 

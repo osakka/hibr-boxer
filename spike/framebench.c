@@ -139,4 +139,4 @@ int m_framebench(sh *s, int ac, char **av)
 }
 
 const hibr_bi framebench_bi[] = { { "framebench", m_framebench, "time synthetic frames through the display" }, HIBR_BI_END };
-HIBR_MODULE("framebench", "0.1", "frame-rate spike for hibr-retro-gaming", framebench_bi, 0, 0);
+HIBR_MODULE("framebench", "0.1", "frame-rate spike for hibr-boxer", framebench_bi, 0, 0);

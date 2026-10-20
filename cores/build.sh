@@ -11,13 +11,6 @@ while read -r name url tag commit; do
 	got=$(git -C "$work/$name" rev-parse HEAD)
 	[ "$got" = "$commit" ] || { echo "$name: $tag is $got, expected $commit" >&2; exit 1; }
 	case $name in
-	scummvm)
-		d=$work/scummvm/backends/platform/libretro
-		make -C "$d" -j"$(nproc)"
-		make -C "$d" scummvm.zip
-		strip -o "$out/scummvm_libretro.so" "$d/scummvm_libretro.so"
-		cp "$d/scummvm.zip" "$out/"
-		;;
 	dosbox_pure)
 		make -C "$work/dosbox_pure" -j2
 		cp "$work/dosbox_pure/dosbox_pure_libretro.so" "$out/"

@@ -1,6 +1,6 @@
 # retro
 
-A libretro frontend as a hibr module: `need retro`. A core (DOSBox, ScummVM, the test core) is a shared
+A libretro frontend as a hibr module: `need retro`. A core (DOSBox Pure, the test core) is a shared
 object; the module loads it, runs it on a thread of its own, and draws its picture through the display
 interface, as pixels where the terminal has them and half blocks where it does not.
 
@@ -62,6 +62,6 @@ Sound goes to PipeWire/Pulse/ALSA/AudioQueue as in hibr's `media`; `HIBR_RETRO_A
 
 ## Real cores
 
-`cores/build.sh WORKDIR OUTDIR` builds ScummVM and DOSBox Pure from the revisions in `cores/PINS`. Both load and run through `retro open`: ScummVM (v2026.4.0) detects a game directory and draws it, DOSBox Pure (1.0-preview7) runs at 70 fps. ScummVM needs `scummvm.zip` unpacked in the system directory (`-s`). `build/rl_shot` (`tests/rl_shot.c`) writes a core's latest frame as PPM.
+`cores/build.sh WORKDIR OUTDIR` builds DOSBox Pure from the revision in `cores/PINS`; it loads and runs through `retro open` at 70 fps. ScummVM also ran (it reopens fine and drew a game) but was dropped for its size, see ADR 0002. `build/rl_shot` (`tests/rl_shot.c`) writes a core's latest frame as PPM.
 
-Checked on the real cores: DOSBox Pure saves and loads a state while a DOS program runs (152 kB), and says so when none runs; ScummVM has no state to give.
+Checked on the real cores: DOSBox Pure saves and loads a state while a DOS program runs (152 kB), and says so when none runs.
