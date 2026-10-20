@@ -36,7 +36,7 @@ def gamebox(name="Test Game"):
 def desk(body, box, pix=False, env=None):
     p = sx.scratch("boxer.hibr")
     open(p, "w").write(
-        "%s. %s\n. %s/apps/boxerplay.hibr\n"
+        "%s. %s\n. %s/apps/Games/boxerplay.hibr\n"
         "dt_open\nBID := dt_launch boxerplay \"%s\"\n%s\ndt_run\ndt_close\n"
         % (load("console", RETRO), DESK, ROOT, box, body))
     kw = dict(cellw=8, cellh=16, caps=["kitty"]) if pix else {}
@@ -49,7 +49,7 @@ box = gamebox()
 # program's folder and starts it with its arguments.
 hb = sx.HIBR
 import subprocess
-r = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxerplay.hibr\njson parse BPJ \"$(< '%s/gamebox.json')\"\n"
+r = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxerplay.hibr\njson parse BPJ \"$(< '%s/gamebox.json')\"\n"
                     "mkdir -p %s/o; f := bp_conf '%s' %s/o; cat \"$f\""
                     % (load("console"), DESK, ROOT, box, D, box, D)],
                    capture_output=True, text=True, env=dict(os.environ, **ENVBASE), timeout=60)
@@ -106,7 +106,7 @@ png(os.path.join(shelf, "Beta Racer.gamebox", "cover.png"), 60, 80, (200, 40, 40
 def shelfdesk(pix):
     p = sx.scratch("boxer.hibr")
     open(p, "w").write(
-        "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/boxer.hibr\n"
+        "%s. %s\n. %s/apps/Games/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\n"
         "dt_open\nBID := dt_launch boxer \"%s\"\ndt_run\ndt_close\n"
         % (load("console", "img", RETRO), DESK, ROOT, ROOT, shelf))
     kw = dict(cellw=8, cellh=16, caps=["kitty"]) if pix else {}
@@ -173,7 +173,7 @@ os.makedirs(ish)
 
 
 def imp(*a):
-    q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxer.hibr\nBX_SHELF=%s\n%s"
+    q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\nBX_SHELF=%s\n%s"
                         % (load("console"), DESK, ROOT, ish, "\n".join(a))],
                        capture_output=True, text=True, env=dict(os.environ, **ENVBASE), timeout=60)
     return q.stdout, q.stderr
@@ -205,7 +205,7 @@ if dbp and os.path.exists(dbp):
     os.makedirs(hsrc)
     open(hsrc + "/HELLO.COM", "wb").write(
         b"\xb4\x09\xba\x10\x01\xcd\x21\xb4\x00\xcd\x16\xb8\x00\x4c\xcd\x21Hello from Boxer$")
-    out, err = imp(". %s/apps/boxerplay.hibr" % ROOT,
+    out, err = imp(". %s/apps/Games/boxerplay.hibr" % ROOT,
                    "b := bx_import %s; mkdir -p %s/hrun; json parse BPJ \"$(< \"$b/gamebox.json\")\"; "
                    "f := bp_conf \"$b\" %s/hrun; echo \"$b|$f\"" % (hsrc, D, D))
     out = out.strip()
