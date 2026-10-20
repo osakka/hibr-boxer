@@ -4,7 +4,7 @@ CFLAGS ?= -O2 -g -Wall
 INC = -Imods/retro -I$(HIBR)/include
 B = build
 
-.PHONY: all check clean
+.PHONY: all check check-retro clean
 all: $(B)/testcore.so $(B)/rl_harness
 
 $(B):
@@ -21,5 +21,13 @@ check: all
 	HIBR_RETRO_AUDIO=wav:$(B)/harness.wav $(B)/rl_harness $(B)/testcore.so rgb565
 	HIBR_RETRO_AUDIO=wav:$(B)/harness.wav $(B)/rl_harness $(B)/testcore.so 0rgb1555
 
+check-retro: all
+	python3 -I tests/retro.py
+
 clean:
 	rm -rf $(B)
+
+RETRO_SRC = mods/retro/retro.c mods/retro/rl.c mods/retro/ra.c
+$(B)/retro.so: $(RETRO_SRC) mods/retro/rl.h mods/retro/ra.h mods/retro/display.h | $(B)
+	$(CC) $(CFLAGS) -fPIC -shared $(INC) -o $@ $(RETRO_SRC) -ldl -lpthread
+all: $(B)/retro.so
