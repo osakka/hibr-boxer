@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games on a shelf" 0.4
+app boxer "DOS games on a shelf" 0.5
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -212,7 +212,15 @@ fn bx_import(src, title = "", mode = auto) {
 	if [ "$iso" = 1 ]; then
 		command cp -- "$src" "$box/drives/d/" || { command rm -rf -- "$box" "$tmp"; return 1; }
 		[ -e "${src%.*}.bin" ] && [ "${src##*.}" = cue ] && command cp -- "${src%.*}.bin" "$box/drives/d/"
-		bd_describe "$box" "$name" installed
+		[ -e "${src%.*}.BIN" ] && [ "${src##*.}" = CUE ] && command cp -- "${src%.*}.BIN" "$box/drives/d/"
+		tmp=$(mktemp -d)
+		if bd_extract "$box/drives/d/${src##*/}" "$tmp"; then
+			bx_discplan "$box" "$name" "$tmp" "$mode"
+		else
+			echo "boxer: $base added with its disc in D:; nothing here can read inside a disc image (xorriso, 7z or bsdtar), so it starts at the DOS prompt" >&2
+			bd_describe "$box" "$name" installed
+		fi
+		command rm -rf -- "$tmp"
 		ret "$box"
 		return 0
 	fi
@@ -233,10 +241,9 @@ fn bx_import(src, title = "", mode = auto) {
 		[ -n "$found" ] && [ "$BD_TELLY" = 0 ] && mode=install
 	fi
 	if [ "$mode" = install ] && [ -n "$found" ]; then
-		command cp -R -- "$work"/. "$box/drives/d/" || { command rm -rf -- "$box" "$tmp"; return 1; }
-		bx_hoist "$box/drives/d"
-		bx_dosify "$box/drives/d"
+		bx_disc "$work" "$box" || { command rm -rf -- "$box" "$tmp"; return 1; }
 		bd_describe "$box" "$name" installing
+		BD_DINST=
 	else
 		command rmdir "$box/drives/d" 2> /dev/null
 		bx_copyin "$work" "$box" "$name"
@@ -244,6 +251,53 @@ fn bx_import(src, title = "", mode = auto) {
 	fi
 	[ -n "$tmp" ] && command rm -rf -- "$tmp"
 	ret "$box"
+}
+
+# Put the disc a game installs from into D:: as a disc image when a tool here
+# can make one, so that DOS sees a CD-ROM, else as a folder.
+fn bx_disc(work, box) {
+	local stage
+
+	stage=$(mktemp -d) || return 1
+	command cp -R -- "$work"/. "$stage/" || { command rm -rf -- "$stage"; return 1; }
+	bx_hoist "$stage"
+	bx_dosify "$stage"
+	bd_scan "$stage"
+	BD_DINST=$BD_INST
+	if bd_mkiso "$stage" "$box/drives/d/disc.iso"; then
+		command rm -rf -- "$stage"
+	else
+		command cp -R -- "$stage"/. "$box/drives/d/" || { command rm -rf -- "$stage"; return 1; }
+		command rm -rf -- "$stage"
+	fi
+	return 0
+}
+
+# What a game's disc image holds decides what to do with it, as a folder's files
+# do: Windows only, or nothing DOS, is turned away; an installer is run first,
+# from the image as D:; a game that runs from its disc lists its programs on D:.
+fn bx_discplan(box, name, tree, mode) {
+	local prog list=
+
+	bd_scan "$tree"
+	if [ "$BD_WINN" -gt 0 ] && ! printf '%s\n' "$BD_DOS" | grep -vi '\.bat$' | grep -q .; then
+		echo "boxer: $name is a Windows game, and Boxer plays DOS games" >&2
+	fi
+	if [ "$mode" = auto ]; then
+		mode=installed
+		[ -n "$BD_INST" ] && [ "$BD_TELLY" = 0 ] && mode=install
+	fi
+	if [ "$mode" = install ] && [ -n "$BD_INST" ]; then
+		BD_DINST=$BD_INST
+		bd_describe "$box" "$name" installing
+		BD_DINST=
+		return 0
+	fi
+	list=$(bd_programs "$tree" D)
+	BD_DPROGS=$list
+	bd_describe "$box" "$name" installed
+	BD_DPROGS=
+	return 0
 }
 
 # Copy an installed game into drive C: of the box, in a folder of its own when

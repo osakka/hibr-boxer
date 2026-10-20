@@ -24,3 +24,14 @@ Where it differs, because a terminal is not a Mac window: the installer's disc i
 folder, not an emulated CD-ROM (DOSBox Pure refuses a folder as a CD-ROM); the "this game is
 already installed" button is *Game Is Already Installed* in the game's right-click menu; and
 the program list is a drop-down under the game's tile, not a panel in the game window.
+
+## Games that need their disc
+
+A game that checks for its CD (Dungeon Keeper) needs the disc image as D: *as a CD-ROM*, in
+the box, every time it is played. A disc image given to Boxer is copied into `drives/d/` and
+mounted `imgmount d ... -t iso`, so DOS sees a CD-ROM; a cue sheet goes the same way. If
+xorriso, 7z or bsdtar is here, the image is read to find an installer (run first, from D:) or,
+for a game that runs from its disc, the programs on it (D: paths). A folder given as a game's
+installation disc is made into an image too (xorriso), for the same reason. When the installer
+has put files on C: the image stays; when it did not, or Game Is Already Installed is chosen,
+the image's files are taken off it into C:.

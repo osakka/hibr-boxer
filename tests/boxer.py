@@ -263,9 +263,9 @@ b1 = out.split("box=")[1].strip() if "box=" in out else ""
 d1 = doc(b1) if b1 else {}
 check("a folder with an installer and nothing saying it is installed is set up to run the installer",
       d1.get("state") == "installing" and d1.get("launch", {}).get("program") == "D:\\INSTALL.BAT", (out, err, d1))
-check("the source is the CD in D:, and C: is empty for the installer to fill",
-      os.path.exists(b1 + "/drives/d/GAME/PRINCE.EXE") and not os.listdir(b1 + "/drives/c")
-      and d1.get("mounts", [{}])[0].get("kind") == "cdrom", (out, d1))
+check("the source is the CD in D: (a disc image when xorriso is here, else the folder), and C: is empty for the installer to fill",
+      (os.path.exists(b1 + "/drives/d/disc.iso") or os.path.exists(b1 + "/drives/d/GAME/PRINCE.EXE"))
+      and not os.listdir(b1 + "/drives/c") and d1.get("mounts", [{}])[0].get("kind") == "cdrom", (out, d1))
 out, err = imp("b := bx_import %s/src/Prince '' installed; echo \"box=$b\"" % D)
 b2 = out.split("box=")[1].strip() if "box=" in out else ""
 d2 = doc(b2) if b2 else {}
@@ -278,8 +278,7 @@ check("what Boxer ignores is not listed (the boot-disk maker, the readme), what 
 check("with several programs there is none chosen: the shelf asks which to run", not d2.get("launch", {}).get("program"), d2)
 out, err = imp("b := bx_import %s/src/Zipped.zip; echo \"box=$b\"" % D)
 bz = out.split("box=")[1].strip() if "box=" in out else ""
-check("a zip is unpacked and treated the same way", bz and doc(bz).get("state") == "installing"
-      and os.path.exists(bz + "/drives/d/Prince/GAME/PRINCE.EXE") or os.path.exists(bz + "/drives/d/GAME/PRINCE.EXE"), (out, err))
+check("a zip is unpacked and treated the same way", bool(bz) and doc(bz).get("state") == "installing", (out, err))
 out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"" % D)
 check("importing the same name again makes another box", "Prince 3.boxer" in out, out + err)
 out, err = imp("b := bx_import %s/src/inst/SETUP.EXE; echo \"box=$b\"" % D)
@@ -298,8 +297,7 @@ mk(b1 + "/drives/c", {"SIERRA/SIERRA.EXE": DOSEXE, "SIERRA/LSL2.EXE": DOSEXE, "S
 out, err = imp("bd_finish '%s'; echo done" % b1)
 d1 = doc(b1)
 check("after an installer that put files on C:, the game is installed and the CD is kept as D:",
-      d1.get("state") == "installed" and os.path.exists(b1 + "/drives/d/GAME/PRINCE.EXE")
-      and d1.get("mounts", [{}])[0].get("path") == "drives/d", (out, err, d1))
+      d1.get("state") == "installed" and d1.get("mounts", [{}])[0].get("path") in ("drives/d", "drives/d/disc.iso"), (out, err, d1))
 check("its programs are those on C:, the boot-disk maker left out, and none is chosen yet",
       sorted(d1.get("programs", [])) == ["C:\\SIERRA\\LSL2.EXE", "C:\\SIERRA\\SIERRA.EXE"] and not d1.get("launch", {}).get("program"), d1)
 out, err = imp("b := bx_import %s/src/Prince; bd_finish \"$b\" 1; echo \"box=$b\"" % D)
@@ -509,6 +507,39 @@ saved = doc(os.path.join(csh, os.path.basename(b2))).get("launch", {}).get("prog
 check("choosing one runs it in a window of its own and is remembered as the program to run",
       "Boxer Game" in t.screen().text() and saved.endswith(".EXE") or saved.endswith(".BAT"), (saved, t.screen()))
 t.close()
+
+# A game that lives on its disc (Dungeon Keeper wants its CD in D: to be played at all): the image is the box's D:,
+# an installer on it is run first, and a game with no installer lists its programs on D: and runs from there.
+if shutil.which("xorriso"):
+    mk(D + "/cd/dk", {"INSTALL.COM": b"\xb4\x3c\x31\xc9\xba\x0d\x01\xcd\x21\xb4\x4c\xcd\x21C:\\KEEPER.COM\0", "DATA/A.DAT": b"x"})
+    subprocess.run(["xorriso", "-as", "mkisofs", "-quiet", "-r", "-iso-level", "1", "-o", D + "/cd/dk.iso", D + "/cd/dk"], check=True,
+                   capture_output=True)
+    out, err = imp("b := bx_import %s/cd/dk.iso; echo \"box=$b\"" % D)
+    bd_ = out.split("box=")[1].strip() if "box=" in out else ""
+    dd = doc(bd_) if bd_ else {}
+    check("a disc image with an installer: the image is D: as a CD, and the installer on it is what runs",
+          dd.get("state") == "installing" and dd.get("launch", {}).get("program") == "D:\\INSTALL.COM"
+          and dd.get("mounts", [{}])[0].get("path", "").endswith(".iso") and os.path.exists(bd_ + "/drives/d/dk.iso"), (out, err, dd))
+    mk(D + "/cd/run", {"HELLO.COM": b"\xb4\x09\xba\x10\x01\xcd\x21\xb8\x00\x4c\xcd\x21Hello from the CD$", "X.DAT": b"x"})
+    subprocess.run(["xorriso", "-as", "mkisofs", "-quiet", "-r", "-iso-level", "1", "-o", D + "/cd/run.iso", D + "/cd/run"], check=True,
+                   capture_output=True)
+    out, err = imp("b := bx_import %s/cd/run.iso; echo \"box=$b\"" % D)
+    br = out.split("box=")[1].strip() if "box=" in out else ""
+    dr = doc(br) if br else {}
+    check("a disc with no installer runs from the disc: its programs are D: paths, and one program is the one to run",
+          dr.get("state") == "installed" and dr.get("programs") == ["D:\\HELLO.COM"] and dr.get("launch", {}).get("program") == "D:\\HELLO.COM", (out, err, dr))
+    if dbp and os.path.exists(dbp) and br:
+        out2, err2 = imp(". %s/apps/boxerplay.hibr" % ROOT,
+                         "b='%s'; json parse BPJ \"$(< \"$b/gamebox.json\")\"; mkdir -p %s/cdrun; f := bp_conf \"$b\" %s/cdrun; echo \"CONF=$f\"" % (br, D, D))
+        conf = out2.split("CONF=")[1].strip() if "CONF=" in out2 else ""
+        ppm = os.path.join(D, "cd.ppm")
+        if conf:
+            subprocess.run([ROOT + "/build/rl_shot", dbp, conf, D + "/sys", br + "/saves", "6", ppm],
+                           env=dict(os.environ, HIBR_RETRO_AUDIO="none"), capture_output=True, timeout=60)
+        raw = open(ppm, "rb").read() if os.path.exists(ppm) else b""
+        pxc = raw[len(raw) - 640 * 400 * 3:] if raw else b""
+        litc = sum(1 for i in range(0, 640 * 30 * 3, 3) if pxc[i] > 128) if pxc else 0
+        check("and it plays from the CD: the program on D: ran from the image DOS sees as a CD-ROM", litc > 20, (litc, out2[-300:], err2[-300:]))
 
 shutil.rmtree(D, True)
 report()

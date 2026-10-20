@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.4
+app boxerplay "A DOS game from a gamebox" 0.5
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -75,6 +75,8 @@ BD_WINN=0
 BD_TELLY=0
 BD_CONFN=0
 BD_INST=
+BD_DINST=
+BD_DPROGS=
 
 # Whether a path is one Boxer ignores altogether (the path in lower case).
 fn bd_ignored(lo) {
@@ -225,12 +227,45 @@ fn bd_wantsfolder(dir) {
 	[ "$progs" = 1 ]
 }
 
+# Unpack a disc image into a folder, to look inside it: with xorriso, 7z or
+# bsdtar, whichever is here. A cue sheet is read through its image. Status 1
+# when nothing here can read it, and the game goes in unread.
+fn bd_extract(img, dest) {
+	local f=$img
+
+	case ${img,,} in
+	*.cue)
+		f=${img%.*}.bin
+		[ -e "$f" ] || f=${img%.*}.BIN ;;
+	esac
+	[ -e "$f" ] || return 1
+	if command -v xorriso > /dev/null; then
+		xorriso -osirrox on -indev "$f" -extract / "$dest" > /dev/null 2>&1 && { command chmod -R u+rwX "$dest" 2> /dev/null; return 0; }
+	fi
+	if command -v 7z > /dev/null; then
+		7z x -y -o"$dest" "$f" > /dev/null 2>&1 && return 0
+	fi
+	if command -v bsdtar > /dev/null; then
+		bsdtar -xf "$f" -C "$dest" > /dev/null 2>&1 && { command chmod -R u+rwX "$dest" 2> /dev/null; return 0; }
+	fi
+	return 1
+}
+
+# Make a disc image out of a folder, so that DOS sees a CD-ROM in D: and not a
+# folder: a game that wants its disc looks for one. Status 1 when no tool here
+# makes one.
+fn bd_mkiso(dir, out) {
+	command -v xorriso > /dev/null || return 1
+	xorriso -as mkisofs -quiet -r -iso-level 1 -V GAME -o "$out" "$dir" > /dev/null 2>&1
+}
+
 # Write the box's gamebox.json from what is in its drives, keeping what the
 # person has set: the programs, which one launches, the CD, and where the box
 # is in its installing. state is installing, installed, or empty.
 fn bd_describe(box, name, state = "") {
-	local f p old prev progs line i=0 first n
+	local f p old prev progs line i=0 first n oldn k
 	local -A keep
+	local -a oldd
 
 	if [ -r "$box/gamebox.json" ] && json parse BPJ "$(< "$box/gamebox.json")" 2> /dev/null; then
 		for p in .title .display.render .display.aspect .cpu.cycles .machine .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .launch.args .source.imported; do
@@ -238,6 +273,11 @@ fn bd_describe(box, name, state = "") {
 			[ -n "$old" ] && keep[$p]=$old
 		done
 		prev := json get BPJ .launch.program 2> /dev/null || prev=
+		oldn := json len BPJ .programs 2> /dev/null || oldn=0
+		for ((k = 0; k < oldn; k++)); do
+			old := json get BPJ ".programs[$k]" 2> /dev/null || continue
+			case $old in D:*) oldd+=("$old") ;; esac
+		done
 		[ -n "${keep[.title]-}" ] && name=${keep[.title]}
 	fi
 	json parse BPJ '{"gamebox":1,"engine":"dosbox","launch":{},"programs":[],"mounts":[]}'
@@ -254,18 +294,34 @@ fn bd_describe(box, name, state = "") {
 		[ "$line" = "$prev" ] && first=$prev
 		i=$((i + 1))
 	done <<< "$progs"
+	# A game that runs from its disc: the programs on it, as D: paths, kept
+	# from when the disc was read (or from before).
+	if [ -n "${BD_DPROGS-}" ]; then
+		while IFS= read -r line; do
+			[ -n "$line" ] || continue
+			json set BPJ ".programs[$i]" "$line" -s
+			[ "$line" = "$prev" ] && first=$prev
+			i=$((i + 1))
+		done <<< "$BD_DPROGS"
+	else
+		for line in "${oldd[@]}"; do
+			json set BPJ ".programs[$i]" "$line" -s
+			[ "$line" = "$prev" ] && first=$prev
+			i=$((i + 1))
+		done
+	fi
 	n=$i
 	if [ "$state" = installing ]; then
-		bd_scan "$box/drives/d"
+		if [ -n "${BD_DINST-}" ]; then BD_INST=$BD_DINST; else bd_scan "$box/drives/d"; fi
 		first=${BD_INST%%$'\n'*}
 		[ -n "$first" ] && first="D:\\${first//\//\\}"
 		json set BPJ .state installing -s
 	else
-		[ "$n" = 1 ] && first=$(printf '%s' "$progs" | head -n 1)
+		[ "$n" = 1 ] && first=$(json get BPJ .programs[0] 2> /dev/null)
 		[ -n "$state" ] && json set BPJ .state "$state" -s
 	fi
 	[ -n "$first" ] && json set BPJ .launch.program "$first" -s
-	for f in "$box"/drives/d/*.cue "$box"/drives/d/*.iso; do
+	for f in "$box"/drives/d/*.cue "$box"/drives/d/*.CUE "$box"/drives/d/*.iso "$box"/drives/d/*.ISO "$box"/drives/d/*.img; do
 		[ -e "$f" ] || continue
 		json set BPJ .mounts[0].drive d -s
 		json set BPJ .mounts[0].kind cdrom -s
@@ -290,14 +346,32 @@ fn bd_describe(box, name, state = "") {
 # of their own, as Boxer does when they would otherwise be loose in the root.
 # asis says the second whatever C: holds.
 fn bd_finish(box, asis = 0) {
-	local t d sub
+	local t d sub img stage f
 
 	[ -r "$box/gamebox.json" ] || return 1
 	json parse BPJ "$(< "$box/gamebox.json")" 2> /dev/null || return 1
 	t := bp_get BPJ .title "${box##*/}"
 	if [ "$asis" = 1 ] || [ -z "$(ls -A "$box/drives/c" 2> /dev/null)" ]; then
 		d="$box/drives/d"
-		if [ -d "$d" ] && [ -n "$(ls -A "$d" 2> /dev/null)" ]; then
+		img=
+		for f in "$d"/*.iso "$d"/*.ISO "$d"/*.cue "$d"/*.CUE "$d"/*.img; do
+			[ -e "$f" ] && { img=$f; break; }
+		done
+		if [ -n "$img" ]; then
+			# The files are on a disc image: take them off it, into C:, and drop the image.
+			stage=$(mktemp -d)
+			if bd_extract "$img" "$stage"; then
+				if bd_wantsfolder "$stage"; then
+					sub := bd_dosname "$t"
+					mkdir -p "$box/drives/c/$sub"
+					command cp -R -- "$stage"/. "$box/drives/c/$sub/"
+				else
+					command cp -R -- "$stage"/. "$box/drives/c/"
+				fi
+				command rm -rf -- "$d"
+			fi
+			command rm -rf -- "$stage"
+		elif [ -d "$d" ] && [ -n "$(ls -A "$d" 2> /dev/null)" ]; then
 			if bd_wantsfolder "$d"; then
 				sub := bd_dosname "$t"
 				mkdir -p "$box/drives/c/$sub"
@@ -585,8 +659,9 @@ fn boxerplay_mouse(int id, act, btn, int r, int c, mods = "") {
 	[ -n "$p" ] || return 0
 	case $btn in middle) b=4 ;; right) b=2 ;; esac
 	case ${act##*-} in
-	press | drag) retro mouse "$p" "$r" "$c" "$b" ;;
-	release) retro mouse "$p" "$r" "$c" 0 ;;
+	move | hover) retro mouse "$p" "$r" "$c" "${BP[$id]["btn"]:-0}" ;;
+	press | drag) BP[$id]["btn"]=$b; retro mouse "$p" "$r" "$c" "$b" ;;
+	release) BP[$id]["btn"]=0; retro mouse "$p" "$r" "$c" 0 ;;
 	esac
 	return 0
 }
@@ -631,24 +706,43 @@ fn bp_toggle(int id) {
 	return 0
 }
 
+# Capture the mouse for the game: the desktop reports the pointer's every move,
+# not only while a button is down, and a key gives it back. That is the
+# desktop's to offer (hibr #316); until it does, say so rather than do nothing.
+fn bp_grab(int id) {
+	if dt_has dt_mousegrab; then
+		if [ "${BP[$id]["grab"]-}" = 1 ]; then
+			dt_mousegrab "$id" off
+			BP[$id]["grab"]=0
+		else
+			dt_mousegrab "$id" on
+			BP[$id]["grab"]=1
+		fi
+	else
+		dt_notep low "Capturing the mouse needs a newer hibr (Gitea #316)"
+	fi
+	return 0
+}
+
 fn bp_reset(int id) {
 	retro reset "${BP[$id]["p"]}" 2> /dev/null
 	return 0
 }
 
 fn boxerplay_close(int id) {
-	local fd=${BP[$id]["fd"]} st
+	local fd=${BP[$id]["fd"]} st box=${BP[$id]["box"]-}
 
-	st := bp_state_of "${BP[$id]["box"]-}"
-	# An installer that put nothing on C: has not installed anything yet; the
-	# box stays as it is, and Game Is Already Installed says otherwise.
-	if [ "$st" = installing ] && [ -n "$(ls -A "${BP[$id]["box"]}/drives/c" 2> /dev/null)" ]; then
-		bd_finish "${BP[$id]["box"]}"
-	fi
-
+	# The core goes first: finishing an install can take a while, and a frame
+	# nobody reads in the meantime is a descriptor the desktop warns about.
 	[ -n "$fd" ] && command -v console > /dev/null && console unwatch "$fd"
 	[ -n "${BP[$id]["p"]}" ] && retro close "${BP[$id]["p"]}" 2> /dev/null
 	[ -n "${BP[$id]["dir"]}" ] && command rm -rf -- "${BP[$id]["dir"]}"
+	st := bp_state_of "$box"
+	# An installer that put nothing on C: has not installed anything yet; the
+	# box stays as it is, and Game Is Already Installed says otherwise.
+	if [ "$st" = installing ] && [ -n "$(ls -A "$box/drives/c" 2> /dev/null)" ]; then
+		bd_finish "$box"
+	fi
 	unset "BP[$id]"
 }
 
@@ -673,5 +767,6 @@ boxerplay_menus() {
 	dt_editmenu
 	dt_menu "Game"
 	dt_item "Pause" p bp_toggle "$DT_FOCUS"
+	dt_item "Capture Mouse" g bp_grab "$DT_FOCUS"
 	dt_item "Restart" r bp_reset "$DT_FOCUS"
 }
