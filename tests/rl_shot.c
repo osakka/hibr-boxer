@@ -5,7 +5,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-/* Run a core on a game for a while and write its latest frame as a PPM: rl_shot core game sysdir savedir secs out.ppm. */
+/* Run a core on a game for a while and write its latest frame as a PPM: rl_shot core game sysdir savedir secs out.ppm [keycode]: with a keycode, that RETROK_ key is tapped
+   halfway. */
 
 int main(int argc, char **argv)
 {
@@ -26,7 +27,14 @@ int main(int argc, char **argv)
 		fprintf(stderr, "open: %s\n", err ? err : "failed");
 		return 1;
 	}
-	sleep((unsigned)atoi(argv[5]));
+	if (argc > 7) {
+		sleep((unsigned)atoi(argv[5]) / 2);
+		rl_key(r, (unsigned)atoi(argv[7]), 0, 0, 1);
+		usleep(150000);
+		rl_key(r, (unsigned)atoi(argv[7]), 0, 0, 0);
+		sleep((unsigned)atoi(argv[5]) - (unsigned)atoi(argv[5]) / 2);
+	} else
+		sleep((unsigned)atoi(argv[5]));
 	f = rl_lock(r, &w, &h, &seq);
 	if (!f) {
 		fprintf(stderr, "no frame\n");

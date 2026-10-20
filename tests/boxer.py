@@ -33,14 +33,14 @@ def gamebox(name="Test Game"):
     return b
 
 
-def desk(body, box, pix=False):
+def desk(body, box, pix=False, env=None):
     p = sx.scratch("boxer.hibr")
     open(p, "w").write(
         "%s. %s\n. %s/apps/boxerplay.hibr\n"
         "dt_open\nBID := dt_launch boxerplay \"%s\"\n%s\ndt_run\ndt_close\n"
         % (load("console", RETRO), DESK, ROOT, box, body))
     kw = dict(cellw=8, cellh=16, caps=["kitty"]) if pix else {}
-    return Term(p, rows=26, cols=82, settle=1.0, env=ENVBASE, **kw)
+    return Term(p, rows=26, cols=82, settle=1.0, env=dict(ENVBASE, **(env or {})), **kw)
 
 
 box = gamebox()
@@ -170,6 +170,49 @@ check("a lone installer is marked, and is what launches", '"installer": true' in
 out, err = imp("bx_import_all 9 %s/src/Prince %s/src/nothing-here; echo \"n=${BX[9][n]}\"" % (D, D))
 check("a drop imports what it can, skips what it cannot, and the shelf is read again",
       "n=4" in out or "n=5" in out, out + err)
+
+# The whole way, on the real core when DBP_CORE names one (cores/build.sh makes it): a folder holding a DOS
+# program is imported, its run.conf is given to DOSBox Pure, and the program's text is on the screen -- with the
+# banner and the mount message cleared away, so the text is alone at the top.
+dbp = os.environ.get("DBP_CORE")
+if dbp and os.path.exists(dbp):
+    hsrc = os.path.join(D, "src", "Hello")
+    os.makedirs(hsrc)
+    open(hsrc + "/HELLO.COM", "wb").write(
+        b"\xb4\x09\xba\x10\x01\xcd\x21\xb4\x00\xcd\x16\xb8\x00\x4c\xcd\x21Hello from Boxer$")
+    out, err = imp(". %s/apps/boxerplay.hibr" % ROOT,
+                   "b := bx_import %s; mkdir -p %s/hrun; json parse BPJ \"$(< \"$b/gamebox.json\")\"; "
+                   "f := bp_conf \"$b\" %s/hrun; echo \"$b|$f\"" % (hsrc, D, D))
+    out = out.strip()
+    check("the real core: a folder is imported and its conf made", "|" in out, out + err)
+    if "|" in out:
+        hb_, conf = out.split("|")
+        ppm = os.path.join(D, "hello.ppm")
+        rs = subprocess.run([ROOT + "/build/rl_shot", dbp, conf, D + "/sys", hb_ + "/saves", "5", ppm],
+                            env=dict(os.environ, HIBR_RETRO_AUDIO="none"), capture_output=True, text=True, timeout=60)
+        raw = open(ppm, "rb").read() if os.path.exists(ppm) else b""
+        w, h = (640, 400)
+        px = raw[len(raw) - w * h * 3:] if raw else b""
+        lit = lambda y0, y1: sum(1 for i in range(y0 * w * 3, y1 * w * 3, 3) if px[i] > 128)
+        check("the program ran and its text is on the screen, alone at the top",
+              px and lit(0, 20) > 20 and lit(60, 400) == 0, (lit(0, 20), lit(60, 400)) if px else (rs.stdout + rs.stderr)[-400:])
+        ppm2 = os.path.join(D, "hello2.ppm")
+        subprocess.run([ROOT + "/build/rl_shot", dbp, conf, D + "/sys", hb_ + "/saves", "6", ppm2, "97"],
+                       env=dict(os.environ, HIBR_RETRO_AUDIO="none"), capture_output=True, timeout=60)
+        raw2 = open(ppm2, "rb").read() if os.path.exists(ppm2) else b""
+        px2 = raw2[len(raw2) - w * h * 3:] if raw2 else b""
+        beside = lambda p: sum(1 for y in range(16) for x in range(130, 170) if p[(y * w + x) * 3] > 128)
+        check("a key reaches the program: it was waiting for one, and ends, the prompt following its text",
+              px2 and beside(px2) > 10 and beside(px) == 0, (beside(px2), beside(px)) if px2 else "no frame")
+        t = desk("", hb_, True, {"BP_CORE": dbp})
+        for _ in range(60):
+            t.collect(0.25)
+            if b"a=T" in t.raw:
+                break
+        t.collect(1.0)
+        check("and the same box plays in the desktop's window through the real core",
+              b"a=T" in t.raw and "Hello" in t.screen().text(), t.screen())
+        t.close()
 
 shutil.rmtree(D, True)
 report()

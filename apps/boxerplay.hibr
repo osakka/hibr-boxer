@@ -80,6 +80,7 @@ fn bp_conf(box, dir) {
 		echo "mount c \"$box/drives/c\""
 		bp_mounts "$box"
 		echo "c:"
+		echo "cls"
 		if [ -n "$prog" ]; then
 			prog=${prog#[Cc]:}
 			d=${prog%\\*}
