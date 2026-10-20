@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games on a shelf" 0.3
+app boxer "DOS games on a shelf" 0.4
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -87,35 +87,6 @@ fn bx_title(def) {
 	[ -n "$v" ] && ret "$v" || ret "$def"
 }
 
-# How likely a program is to be the game itself, from its name and how deep
-# it sits: tools, installers and readers sink, a program named for its
-# folder floats. A DOS path comes in with its folders in front.
-fn bx_score(rel, folder) {
-	local n=${rel##*/} lo s=100 d=${rel//[^\/]/} tool=0
-
-	lo=${n,,}
-	s=$((s - ${#d} * 12))
-	case $lo in
-	*install* | *setup* | *config* | *uninst* | *unins* | *setsound* | *sound* | *readme* | *help* | *patch* | *update* | *dos4gw* | *cwsdpmi* | *pkunzip* | *utility* | *util* | *cfg*) s=$((s - 80)); tool=1 ;;
-	esac
-	case $lo in *.bat) s=$((s - 5)) ;; esac
-	lo=${lo%.*}
-	[ "$tool" = 0 ] && [ -n "$folder" ] && case ${folder,,} in "$lo"* | *"$lo") s=$((s + 25)) ;; esac
-	ret "$s"
-}
-
-# The DOS programs under a folder, best guess first, a DOS path a line.
-fn bx_detect(dir, folder = "") {
-	local f rel sc
-
-	find "$dir" -maxdepth 3 -type f \( -iname '*.exe' -o -iname '*.com' -o -iname '*.bat' \) 2> /dev/null |
-	while IFS= read -r f; do
-		rel=${f#"$dir"/}
-		sc := bx_score "$rel" "$folder"
-		printf '%s\t%s\n' "$sc" "C:\\${rel//\//\\}"
-	done | sort -t "$(printf '\t')" -k1,1nr -k2,2 | cut -f1,2
-}
-
 # A name for a new box that is not on the shelf yet.
 fn bx_unique(name) {
 	local n=$name k=2
@@ -125,34 +96,6 @@ fn bx_unique(name) {
 		k=$((k + 1))
 	done
 	ret "$n"
-}
-
-# Put src into the box's drive C: a folder is copied, a zip or tar unpacked,
-# a lone program copied by itself. A CD image goes to drives/d, and is the
-# box's d mount.
-fn bx_fill(src, box) {
-	case ${src,,} in
-	*.zip)
-		command -v unzip > /dev/null || { echo "boxer: unzip is needed to open a zip" >&2; return 1; }
-		unzip -q -o -d "$box/drives/c" "$src" > /dev/null || return 1
-		;;
-	*.tar | *.tar.gz | *.tgz | *.tar.xz | *.tar.bz2)
-		tar -xf "$src" -C "$box/drives/c" || return 1
-		;;
-	*.iso | *.cue | *.img | *.bin)
-		mkdir -p "$box/drives/d"
-		command cp -- "$src" "$box/drives/d/" || return 1
-		[ -e "${src%.*}.bin" ] && [ "${src##*.}" = cue ] && command cp -- "${src%.*}.bin" "$box/drives/d/"
-		;;
-	*.exe | *.com | *.bat)
-		command cp -- "$src" "$box/drives/c/" || return 1
-		;;
-	*)
-		[ -d "$src" ] || return 1
-		command cp -R -- "$src"/. "$box/drives/c/" || return 1
-		;;
-	esac
-	return 0
 }
 
 # Whether a name is one DOS can hold as it is: eight characters, a dot and
@@ -229,70 +172,106 @@ fn bx_dosify(root) {
 	return 0
 }
 
-# Write the box's gamebox.json from what is in its drives: the programs,
-# best guess first, which one launches, a CD image's mount.
-fn bx_describe(box, base, name) {
-	local progs sc line i=0
-
-	progs=$(bx_detect "$box/drives/c" "$base")
-	json parse BXJ '{"gamebox":1,"engine":"dosbox","launch":{},"programs":[],"mounts":[]}'
-	json set BXJ .title "$name" -s
-	while IFS=$'\t' read -r sc line; do
-		[ -n "$line" ] || continue
-		json set BXJ ".programs[$i]" "$line" -s
-		if [ "$i" = 0 ]; then
-			json set BXJ .launch.program "$line" -s
-			[ "$sc" -lt 40 ] && json set BXJ .installer true
-		fi
-		i=$((i + 1))
-	done <<< "$progs"
-	for line in "$box"/drives/d/*.cue "$box"/drives/d/*.iso; do
-		[ -e "$line" ] || continue
-		json set BXJ .mounts[0].drive d -s
-		json set BXJ .mounts[0].kind cdrom -s
-		json set BXJ .mounts[0].path "drives/d/${line##*/}" -s
-		break
-	done
-	json set BXJ .display.aspect default -s
-	json set BXJ .source.imported "$(date +%F)" -s
-	json emit BXJ -p > "$box/gamebox.json"
-	return 0
-}
-
-# Make a gamebox on the shelf from src -- a folder, an archive, a CD image
-# or a lone program -- and say where it is. The best-guess program becomes
-# the one to launch, and the rest are listed in the box; a box with nothing
-# but an installer is marked so, and launches the installer.
-fn bx_import(src, title = "") {
-	local base name box
+# Make a gamebox on the shelf from src -- a folder, an archive, a CD image or
+# a lone program -- the way Boxer does, and say where it is.
+#
+# What the files are decides it: a game with an installer and nothing to say it
+# is installed already is set up to run the installer, with the folder as a CD
+# in D:; the person plays through it, and when the window closes what it put
+# on C: is the game and the CD is kept. A game with no installer, or one that
+# says it is installed, is copied into C:. mode is auto, install or installed
+# to say which.
+fn bx_import(src, title = "", mode = auto) {
+	local base name box work tmp= iso=0 found
 
 	[ -e "$src" ] || { echo "boxer: no such file or folder: $src" >&2; return 1; }
 	base=${src%/}
 	base=${base##*/}
 	base=${base%.*}
+	work=$src
+	case ${src,,} in
+	*.iso | *.cue | *.img | *.bin) iso=1 ;;
+	*.zip)
+		command -v unzip > /dev/null || { echo "boxer: unzip is needed to open a zip" >&2; return 1; }
+		tmp=$(mktemp -d) || return 1
+		unzip -q -o -d "$tmp" "$src" > /dev/null || { command rm -rf -- "$tmp"; return 1; }
+		work=$tmp ;;
+	*.tar | *.tar.gz | *.tgz | *.tar.xz | *.tar.bz2)
+		tmp=$(mktemp -d) || return 1
+		tar -xf "$src" -C "$tmp" || { command rm -rf -- "$tmp"; return 1; }
+		work=$tmp ;;
+	*.exe | *.com | *.bat)
+		tmp=$(mktemp -d) || return 1
+		command cp -- "$src" "$tmp/" || { command rm -rf -- "$tmp"; return 1; }
+		work=$tmp ;;
+	*) [ -d "$src" ] || { echo "boxer: not a folder, archive, disc image or program: $src" >&2; return 1; } ;;
+	esac
 	name := bx_unique "${title:-$base}"
 	box="${BX_TO:-$BX_SHELF}/$name.boxer"
-	mkdir -p "$box/engine" "$box/drives/c" "$box/saves" "$box/extras" || return 1
-	bx_fill "$src" "$box" || { command rm -rf -- "$box"; return 1; }
-	bx_hoist "$box/drives/c"
-	bx_dosify "$box/drives/c"
-	bx_describe "$box" "$base" "$name"
+	mkdir -p "$box/engine" "$box/drives/c" "$box/drives/d" "$box/saves" "$box/extras" || return 1
+	if [ "$iso" = 1 ]; then
+		command cp -- "$src" "$box/drives/d/" || { command rm -rf -- "$box" "$tmp"; return 1; }
+		[ -e "${src%.*}.bin" ] && [ "${src##*.}" = cue ] && command cp -- "${src%.*}.bin" "$box/drives/d/"
+		bd_describe "$box" "$name" installed
+		ret "$box"
+		return 0
+	fi
+	bd_scan "$work"
+	if [ "$BD_WINN" -gt 0 ] && ! printf '%s\n' "$BD_DOS" | grep -vi '\.bat$' | grep -q .; then
+		echo "boxer: $base is a Windows game, and Boxer plays DOS games" >&2
+		command rm -rf -- "$box" "$tmp"
+		return 1
+	fi
+	if [ -z "$BD_DOS" ] && [ "$BD_TELLY" = 0 ] && [ "$BD_CONFN" = 0 ]; then
+		echo "boxer: no DOS programs in $base" >&2
+		command rm -rf -- "$box" "$tmp"
+		return 1
+	fi
+	found=$BD_INST
+	if [ "$mode" = auto ]; then
+		mode=installed
+		[ -n "$found" ] && [ "$BD_TELLY" = 0 ] && mode=install
+	fi
+	if [ "$mode" = install ] && [ -n "$found" ]; then
+		command cp -R -- "$work"/. "$box/drives/d/" || { command rm -rf -- "$box" "$tmp"; return 1; }
+		bx_hoist "$box/drives/d"
+		bx_dosify "$box/drives/d"
+		bd_describe "$box" "$name" installing
+	else
+		command rmdir "$box/drives/d" 2> /dev/null
+		bx_copyin "$work" "$box" "$name"
+		bd_describe "$box" "$name" installed
+	fi
+	[ -n "$tmp" ] && command rm -rf -- "$tmp"
 	ret "$box"
 }
 
-# A box made before its names were made DOS-sized, or by hand: the same
-# treatment, its title kept.
-fn bx_fix(box) {
-	local t base
+# Copy an installed game into drive C: of the box, in a folder of its own when
+# it would otherwise be loose in the root, with names DOS can hold.
+fn bx_copyin(work, box, name) {
+	local sub
 
-	[ -r "$box/gamebox.json" ] || { echo "boxer: not a box: $box" >&2; return 1; }
-	json parse BXJ "$(< "$box/gamebox.json")" || return 1
-	t := bx_title "${box##*/}"
-	base=${box##*/}
-	base=${base%.*}
+	if bd_wantsfolder "$work"; then
+		sub := bd_dosname "$name"
+		mkdir -p "$box/drives/c/$sub"
+		command cp -R -- "$work"/. "$box/drives/c/$sub/" || return 1
+	else
+		command cp -R -- "$work"/. "$box/drives/c/" || return 1
+	fi
 	bx_hoist "$box/drives/c"
 	bx_dosify "$box/drives/c"
-	bx_describe "$box" "$base" "$t"
+	return 0
+}
+
+# A box made before its names were made DOS-sized, or by hand: the same
+# treatment, what the person set kept.
+fn bx_fix(box) {
+	[ -r "$box/gamebox.json" ] || { echo "boxer: not a box: $box" >&2; return 1; }
+	json parse BXJ "$(< "$box/gamebox.json")" || return 1
+	bx_hoist "$box/drives/c"
+	bx_dosify "$box/drives/c"
+	[ -d "$box/drives/d" ] && bx_dosify "$box/drives/d"
+	bd_describe "$box" "${box##*/}" ""
 	ret "$box"
 }
 
@@ -622,15 +601,53 @@ fn bx_info_toggle(int id) {
 	return 0
 }
 
-# Play the selected game in a window of its own.
+# Play the selected game in a window of its own. A game with no program set
+# to run (one with several, as Boxer's own would show its program list) asks
+# which first, and remembers the answer.
 fn bx_play(int id) {
+	local k=${BX[$id]["sel"]:-0} box prog
+
+	box=${BX[$id]["box$k"]-}
+	[ -n "$box" ] || return 0
+	bx_info_loadbox "$id" "$box"
+	prog=${BX[$id]["i_prog"]-}
+	if { [ -z "$prog" ] || [ "$prog" = default ]; } && [ -n "${BX[$id]["iprogs"]}" ]; then
+		bx_choose "$id"
+		return 0
+	fi
+	dt_launch boxerplay "$box" > /dev/null ||
+		dt_notep low "Boxer cannot open the game window"
+	return 0
+}
+
+# Ask which of the game's programs to run, under the tile.
+fn bx_choose(int id) {
+	local -a o
+
+	read -ra o <<< "${BX[$id]["iprogs"]}"
+	BX[$id]["pick"]=prog
+	dt_droplist "$id" "${BX[$id]["lr"]:-3}" "${BX[$id]["lc"]:-3}" bx_chose "${o[@]}"
+}
+
+fn bx_chose(int id, value = "") {
+	local box=${BX[$id]["ibox"]-}
+
+	bx_info_set "$id" prog "$value"
+	dt_launch boxerplay "$box" > /dev/null ||
+		dt_notep low "Boxer cannot open the game window"
+	return 0
+}
+
+# A game that was put on the shelf to be installed, and is already installed:
+# its files are the game.
+fn bx_installed(int id) {
 	local k=${BX[$id]["sel"]:-0} box
 
 	box=${BX[$id]["box$k"]-}
-
 	[ -n "$box" ] || return 0
-	dt_launch boxerplay "$box" > /dev/null ||
-		dt_notep low "Boxer cannot open the game window"
+	bd_finish "$box" 1
+	bx_scan "$id"
+	[ "${BX[$id]["info"]:-0}" = 1 ] && bx_info_load "$id"
 	return 0
 }
 
@@ -695,6 +712,8 @@ fn boxer_click(int id, int r, int c, btn = "") {
 	k=$(((top + tr) * cols + tc))
 	[ "$k" -lt "${BX[$id]["n"]}" ] || return 0
 	dt_isdbl "$id" && dbl=1
+	BX[$id]["lr"]=$r
+	BX[$id]["lc"]=$c
 	bx_select "$id" "$k"
 	if [ "$dbl" = 1 ] && [ "${BX[$id]["last"]-}" = "$k" ]; then
 		bx_play "$id"
@@ -773,6 +792,8 @@ fn boxer_mouse(int id, act, btn, int r, int c, mods = "") {
 	[ "$tc" -lt "$cols" ] || return 0
 	k=$(((top + tr) * cols + tc))
 	[ "$k" -lt "${BX[$id]["n"]}" ] || return 0
+	BX[$id]["lr"]=$r
+	BX[$id]["lc"]=$c
 	bx_select "$id" "$k"
 	dt_context_open boxer "$id" "$r" "$c"
 	return 0
@@ -783,6 +804,8 @@ fn boxer_context(int id) {
 	dt_menu "Game"
 	dt_item "Play" p bx_play "$id"
 	dt_item "Get Info${GL[ellipsis]}" i bx_getinfo "$id"
+	bx_info_loadbox "$id" "${BX[$id]["box${BX[$id]["sel"]:-0}"]-}"
+	[ "$(bp_state_of "${BX[$id]["ibox"]-}")" = installing ] && dt_item "Game Is Already Installed" a bx_installed "$id"
 	dt_sep
 	dt_item "Show in Files" f bx_reveal "$id"
 }
@@ -864,12 +887,19 @@ boxer_menus() {
 
 # From a shell: boxer.hibr import PATH... puts each on the shelf and says where.
 if [ -z "${DT_ROWS-}" ]; then
+	# The detection and the box's description are boxerplay's, installed with it.
+	dt_has bd_scan || . "${BASH_SOURCE%/*}/../boxerplay.hibr" 2> /dev/null
 	case ${1-} in
 	import)
 		shift
 		mkdir -p "$BX_SHELF"
+		mode=auto
 		for p in "$@"; do
-			b := bx_import "$p" && echo "$b"
+			case $p in
+			--install) mode=install; continue ;;
+			--installed) mode=installed; continue ;;
+			esac
+			b := bx_import "$p" "" "$mode" && echo "$b"
 		done
 		;;
 	fix)

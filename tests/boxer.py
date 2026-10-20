@@ -223,53 +223,101 @@ check("and every ROM and SoundFont is linked into the core's system folder, the 
       all(os.path.islink(os.path.join(sysd, f)) for f in ("MT32_CONTROL.ROM", "MT32_PCM.ROM", "ROM1.BIN", "gm.sf2"))
       and not os.path.exists(os.path.join(sysd, "notes.txt")), os.listdir(sysd))
 
-# Import: a folder, a zip and a lone installer each become a box; the program named for its folder is the one
-# to launch, installers and tools sink, a lone installer marks the box, and the same name is not overwritten.
+# Import, by Boxer's own rules: DOS programs are told from Windows ones by their headers; boot-disk makers, readers
+# and archivers are ignored; an installer (inst, setup, config in a name; install., setup. first) with nothing to
+# say the game is installed means the installer is run first, from the source as D:; otherwise the files are copied.
+DOSEXE = b"MZ" + b"\0" * 62
+PEEXE = b"MZ" + b"\0" * 22 + b"\x40\0" + b"\0" * 34 + b"\x80\0\0\0" + b"\0" * 64 + b"PE\0\0" + b"\0" * 24
+
+
+def mk(root, files):
+    for f, c in files.items():
+        os.makedirs(os.path.dirname(os.path.join(root, f)) or root, exist_ok=True)
+        open(os.path.join(root, f), "wb").write(c)
+
+
 src = os.path.join(D, "src", "Prince")
-os.makedirs(src + "/GAME")
-for f in ("GAME/PRINCE.EXE", "GAME/SETUP.EXE", "INSTALL.BAT", "GAME/README.COM"):
-    open(os.path.join(src, f), "w").write("x")
+mk(src, {"GAME/PRINCE.EXE": DOSEXE, "GAME/SETUP.EXE": DOSEXE, "INSTALL.BAT": b"@echo off\r\n", "GAME/README.COM": b"x",
+         "BOOTDISK.EXE": DOSEXE})
 subprocess.run(["zip", "-qr", os.path.join(D, "src", "Zipped.zip"), "Prince"], cwd=D + "/src", check=True)
-os.makedirs(D + "/src/inst")
-open(D + "/src/inst/SETUP.EXE", "w").write("x")
+mk(D + "/src/inst", {"SETUP.EXE": DOSEXE})
 ish = os.path.join(D, "ishelf")
 shutil.rmtree(ish, True)
 os.makedirs(ish)
 
 
 def imp(*a):
-    q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\nBX_SHELF=%s\n%s"
-                        % (load("console"), DESK, ROOT, ish, "\n".join(a))],
+    q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\nBX_SHELF=%s\n%s"
+                        % (load("console"), DESK, ROOT, ROOT, ish, "\n".join(a))],
                        capture_output=True, text=True, env=dict(os.environ, **ENVBASE), timeout=60)
     return q.stdout, q.stderr
 
 
-out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"; cat \"$b/gamebox.json\"" % D)
-check("a folder is copied into drives/c of a new box on the shelf",
-      "box=%s/Prince.boxer" % ish in out and os.path.exists(ish + "/Prince.boxer/drives/c/GAME/PRINCE.EXE"), out + err)
-check("the program named for the folder is the one to launch",
-      r'C:\\GAME\\PRINCE.EXE' in out.split('"launch"')[1].split("}")[0], out + err)
-check("the others are listed, tools and installers last",
-      out.index("PRINCE.EXE") < out.index("SETUP.EXE") and '"installer"' not in out, out)
-out, err = imp("b := bx_import %s/src/Zipped.zip; echo \"box=$b\"" % D)
-check("a zip is unpacked into a box of its own", os.path.exists(ish + "/Zipped.boxer/drives/c/Prince/GAME/PRINCE.EXE"), out + err)
+def doc(b):
+    import json
+    return json.load(open(os.path.join(b, "gamebox.json")))
+
+
 out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"" % D)
-check("importing the same name again makes another box", "box=%s/Prince 2.boxer" % ish in out, out + err)
-out, err = imp("b := bx_import %s/src/inst/SETUP.EXE; cat \"$b/gamebox.json\"" % D)
-check("a lone installer is marked, and is what launches", '"installer": true' in out and "SETUP.EXE" in out, out + err)
-# A folder DOS cannot name as it is (a dot, a space, a long name) is renamed so the DOS path is the real one.
-os.makedirs(D + "/src/Prince of Persia/C.harddisk/priceof")
-open(D + "/src/Prince of Persia/C.harddisk/priceof/PRINCE.EXE", "w").write("x")
-out, err = imp("b := bx_import '%s/src/Prince of Persia'; echo \"box=$b\"; cat \"$b/gamebox.json\"; find \"$b/drives/c\"" % D)
-prog = [l for l in out.split("\n") if '"program"' in l]
-check("a game in folders DOS cannot hold as named is imported with names it can",
-      prog and "PRINCE.EXE" in prog[0] and "C.harddisk" not in out.split("find")[-1] and "C~" not in prog[0],
-      out + err)
-check("a folder that is the drive itself (C.harddisk) is hoisted: the program is at C:\\PRICEOF, not under it",
-      prog and r'C:\\PRICEOF\\PRINCE.EXE' in prog[0].upper(), prog)
-check("and the program's path, taken to the folders as renamed, is a real file",
-      prog and os.path.exists(ish + "/Prince of Persia.boxer/drives/c/" + prog[0].split('"')[3].replace("C:\\\\", "").replace("\\\\", "/")),
-      prog)
+b1 = out.split("box=")[1].strip() if "box=" in out else ""
+d1 = doc(b1) if b1 else {}
+check("a folder with an installer and nothing saying it is installed is set up to run the installer",
+      d1.get("state") == "installing" and d1.get("launch", {}).get("program") == "D:\\INSTALL.BAT", (out, err, d1))
+check("the source is the CD in D:, and C: is empty for the installer to fill",
+      os.path.exists(b1 + "/drives/d/GAME/PRINCE.EXE") and not os.listdir(b1 + "/drives/c")
+      and d1.get("mounts", [{}])[0].get("kind") == "cdrom", (out, d1))
+out, err = imp("b := bx_import %s/src/Prince '' installed; echo \"box=$b\"" % D)
+b2 = out.split("box=")[1].strip() if "box=" in out else ""
+d2 = doc(b2) if b2 else {}
+progs = d2.get("programs", [])
+check("told it is installed, the files are copied into C:, in a folder of their own (programs at the top, no telltale)",
+      d2.get("state") == "installed" and bool(__import__("glob").glob(b2 + "/drives/c/*/INSTALL.BAT")) and "PRINCE.EXE" in " ".join(progs),
+      (out, err, d2))
+check("what Boxer ignores is not listed (the boot-disk maker, the readme), what it does not is",
+      not any("BOOTDISK" in x or "README" in x for x in progs) and any("SETUP.EXE" in x for x in progs), progs)
+check("with several programs there is none chosen: the shelf asks which to run", not d2.get("launch", {}).get("program"), d2)
+out, err = imp("b := bx_import %s/src/Zipped.zip; echo \"box=$b\"" % D)
+bz = out.split("box=")[1].strip() if "box=" in out else ""
+check("a zip is unpacked and treated the same way", bz and doc(bz).get("state") == "installing"
+      and os.path.exists(bz + "/drives/d/Prince/GAME/PRINCE.EXE") or os.path.exists(bz + "/drives/d/GAME/PRINCE.EXE"), (out, err))
+out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"" % D)
+check("importing the same name again makes another box", "Prince 3.boxer" in out, out + err)
+out, err = imp("b := bx_import %s/src/inst/SETUP.EXE; echo \"box=$b\"" % D)
+bi = out.split("box=")[1].strip() if "box=" in out else ""
+check("a lone installer is run from D:", bi and doc(bi).get("launch", {}).get("program") == "D:\\SETUP.EXE", (out, err))
+# A Windows-only game, and a folder with no DOS programs, are turned away.
+mk(D + "/src/winonly", {"GAME.EXE": PEEXE, "SETUP.EXE": PEEXE})
+out, err = imp("bx_import %s/src/winonly; echo \\\"rc=$?\\\"" % D)
+check("a Windows-only game is refused, and says so", "Windows game" in err, out + err)
+mk(D + "/src/empty", {"notes.txt": b"x"})
+out, err = imp("bx_import %s/src/empty; echo \\\"rc=$?\\\"" % D)
+check("a folder with no DOS programs is refused", "no DOS programs" in err, out + err)
+# The installer finishes: what it put on C: is the game, and the CD is kept; with nothing put there, the disc's
+# files were the game and move to C:.
+mk(b1 + "/drives/c", {"SIERRA/SIERRA.EXE": DOSEXE, "SIERRA/LSL2.EXE": DOSEXE, "SIERRA/BOOTDISK.EXE": DOSEXE})
+out, err = imp("bd_finish '%s'; echo done" % b1)
+d1 = doc(b1)
+check("after an installer that put files on C:, the game is installed and the CD is kept as D:",
+      d1.get("state") == "installed" and os.path.exists(b1 + "/drives/d/GAME/PRINCE.EXE")
+      and d1.get("mounts", [{}])[0].get("path") == "drives/d", (out, err, d1))
+check("its programs are those on C:, the boot-disk maker left out, and none is chosen yet",
+      sorted(d1.get("programs", [])) == ["C:\\SIERRA\\LSL2.EXE", "C:\\SIERRA\\SIERRA.EXE"] and not d1.get("launch", {}).get("program"), d1)
+out, err = imp("b := bx_import %s/src/Prince; bd_finish \"$b\" 1; echo \"box=$b\"" % D)
+bk = out.split("box=")[1].strip() if "box=" in out else ""
+check("an installer box said to be installed already has the disc's files moved onto C:, and no CD",
+      bool(__import__("glob").glob(bk + "/drives/c/*/GAME/PRINCE.EXE")) and not os.path.exists(bk + "/drives/d")
+      and not doc(bk).get("mounts"), (out, err))
+# A folder DOS cannot name as it is (a dot, a space, a long name) is renamed so the DOS path is the real one, and a
+# folder that is the drive itself (C.harddisk, which also says the game is installed) is hoisted.
+mk(D + "/src/Prince of Persia", {"C.harddisk/priceof/PRINCE.EXE": DOSEXE})
+out, err = imp("b := bx_import '%s/src/Prince of Persia'; echo \"box=$b\"; find \"$b/drives/c\"" % D)
+bp = out.split("box=")[1].split("\n")[0].strip() if "box=" in out else ""
+dp = doc(bp) if bp else {}
+check("a game in a C.harddisk folder is installed already, hoisted, and its one program is the one to run",
+      dp.get("launch", {}).get("program", "").upper() == "C:\\PRICEOF\\PRINCE.EXE", (out, err, dp))
+check("and names DOS cannot hold are changed, the path being a real file",
+      bp and os.path.exists(bp + "/drives/c/" + dp["launch"]["program"].replace("C:\\", "").replace("\\", "/")),
+      dp.get("launch"))
 out, err = imp("bx_import_all 9 %s/src/Prince %s/src/nothing-here; echo \"n=${BX[9][n]}\"" % (D, D))
 check("a drop imports what it can, skips what it cannot, and the shelf is read again",
       any(("n=%d" % k) in out for k in range(4, 9)), out + err)
@@ -353,6 +401,25 @@ if dbp and os.path.exists(dbp):
             check("a click at row %d, column %d in an offset, resized window puts DOS's pointer there: %s" % (pr, pc, got[:2]),
                   bool(got) and abs(got[0][0] - pr) <= 2 and abs(got[0][1] - pc) <= 2, got[:3])
         t.close()
+        # The installer, on the real core: a game with an installer is set up to run it from D:, the installer puts a
+        # file on C:, and closing the window finishes the install: the game is installed, its programs found.
+        isrc = os.path.join(D, "src", "Installable")
+        mk(isrc, {"INSTALL.COM": b"\xb4\x3c\x31\xc9\xba\x0d\x01\xcd\x21\xb4\x4c\xcd\x21C:\\NEWGAME.COM\0"})
+        out, err = imp("b := bx_import '%s'; echo \"box=$b\"" % isrc)
+        ib = out.split("box=")[1].strip() if "box=" in out else ""
+        check("an installer box starts out installing", ib and doc(ib).get("state") == "installing", (out, err))
+        if ib:
+            t = desk("", ib, False, {"BP_CORE": dbp})
+            t.collect(7.0)
+            xr, xc = t.screen().find("x├")
+            t.send(sx.press(xr, xc) + sx.release(xr, xc))
+            t.collect(1.5)
+            t.close()
+            di = doc(ib)
+            check("the installer ran from D: and wrote to C:, so closing the window finished the install",
+                  os.path.exists(ib + "/drives/c/NEWGAME.COM") and di.get("state") == "installed"
+                  and "C:\\NEWGAME.COM" in di.get("programs", []), (os.listdir(ib + "/drives/c"), di))
+            check("and with one program, that is the one to run", di.get("launch", {}).get("program") == "C:\\NEWGAME.COM", di)
         t = desk("", hb_, True, {"BP_CORE": dbp})
         for _ in range(60):
             t.collect(0.25)
@@ -420,6 +487,28 @@ check("a game's speed, graphics and sound are written into the conf after the pe
       "[cpu]\ncycles=8000" in out and "[dosbox]\nmachine=vgaonly" in out
       and "[sblaster]\nsbtype=sbpro2\nsbbase=240\nirq=5\ndma=3" in out
       and out.index("cycles=max") < out.index("cycles=8000"), out + err)
+
+# A game with several programs and none chosen asks which to run, when played, and remembers the answer.
+csh = os.path.join(D, "chooser")
+os.makedirs(csh)
+shutil.copytree(b2, os.path.join(csh, os.path.basename(b2)))
+p2 = sx.scratch("boxer.hibr")
+open(p2, "w").write(
+    "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\n"
+    "dt_open\nBID := dt_launch boxer \"%s\"\ndt_run\ndt_close\n"
+    % (load("console", "img", RETRO), DESK, ROOT, ROOT, csh))
+t = Term(p2, rows=40, cols=100, settle=1.0, env=ENVBASE)
+t.collect(1.5)
+t.send(b"\r")
+t.collect(1.0)
+check("playing a game with no program chosen offers its programs", "PRINCE.EXE" in t.screen().text() and "Boxer Game" not in t.screen().text(),
+      t.screen())
+t.send(b"\r")
+t.collect(1.5)
+saved = doc(os.path.join(csh, os.path.basename(b2))).get("launch", {}).get("program", "")
+check("choosing one runs it in a window of its own and is remembered as the program to run",
+      "Boxer Game" in t.screen().text() and saved.endswith(".EXE") or saved.endswith(".BAT"), (saved, t.screen()))
+t.close()
 
 shutil.rmtree(D, True)
 report()
