@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.2
+app boxerplay "A DOS game from a gamebox" 0.3
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -46,7 +46,10 @@ BX_FULLKEY="${BX_FULLKEY-f11}"
 BX_HOLD="${BX_HOLD-120}"
 BX_SOUND="${BX_SOUND-on}"
 BX_MOUSE="${BX_MOUSE-direct}"
-command -v dt_keep > /dev/null && dt_keep BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE
+BX_CARD="${BX_CARD-sb16}"
+BX_MIDIDIR="${BX_MIDIDIR-}"
+BX_MIDI="${BX_MIDI-disabled}"
+command -v dt_keep > /dev/null && dt_keep BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_CARD BX_MIDIDIR BX_MIDI
 
 # The text of one field of a gamebox's gamebox.json, or the default.
 fn bp_get(doc, path, def = "") {
@@ -68,6 +71,44 @@ fn bp_mousemode(m) {
 	off) ret false ;;
 	*) ret direct ;;
 	esac
+}
+
+# The MIDI synths in the folder Control Panel > Boxer names, one a line, as
+# DOSBox Pure knows them: a SoundFont (.sf2), a Roland MT-32 or CM-32L's control
+# ROM (its PCM ROM goes with it), or a Sound Canvas SC-55's ROM1.BIN. Nothing
+# else in the folder is listed.
+fn bp_midilist() {
+	local f n lo
+
+	[ -d "${BX_MIDIDIR-}" ] || return 0
+	for f in "$BX_MIDIDIR"/*; do
+		[ -f "$f" ] || continue
+		n=${f##*/}
+		lo=${n,,}
+		case $lo in
+		*.sf2 | *.sf3 | *_control.rom | rom1.bin) echo "$n" ;;
+		esac
+	done
+	return 0
+}
+
+# Make the folder's files the ones DOSBox Pure finds in its system folder:
+# symbolic links to every SoundFont and ROM there, so the synth's own files
+# stay where the person keeps them. A synth can need more than the file named
+# (an MT-32 wants its PCM ROM, an SC-55 its other ROMs), so all of them go.
+fn bp_midilink() {
+	local f n lo
+
+	[ -d "${BX_MIDIDIR-}" ] || return 0
+	for f in "$BX_MIDIDIR"/*; do
+		[ -f "$f" ] || continue
+		n=${f##*/}
+		lo=${n,,}
+		case $lo in
+		*.sf2 | *.sf3 | *.rom | *.bin) command ln -sf -- "$f" "$BP_SYS/$n" ;;
+		esac
+	done
+	return 0
 }
 
 # The mounts a gamebox lists, as DOSBox commands, a line each: a "cdrom" or
@@ -94,14 +135,22 @@ fn bp_mounts(box) {
 # What the game's own settings tell DOSBox, as sections after the person's
 # own conf, so they win: the speed (cycles), the graphics card and the sound.
 fn bp_tune() {
-	local v
+	local v sb=
 
 	v := bp_get BPJ .cpu.cycles
 	[ -n "$v" ] && [ "$v" != default ] && printf '[cpu]\ncycles=%s\n' "$v"
 	v := bp_get BPJ .machine
 	[ -n "$v" ] && [ "$v" != default ] && printf '[dosbox]\nmachine=%s\n' "$v"
-	v := bp_get BPJ .sound.card
-	[ -n "$v" ] && [ "$v" != default ] && printf '[sblaster]\nsbtype=%s\n' "$v"
+	v := bp_get BPJ .sound.card default
+	[ "$v" = default ] && v=$BX_CARD
+	[ -n "$v" ] && [ "$v" != sb16 ] && sb="${sb}sbtype=$v\n"
+	v := bp_get BPJ .sound.port default
+	[ "$v" != default ] && sb="${sb}sbbase=$v\n"
+	v := bp_get BPJ .sound.irq default
+	[ "$v" != default ] && sb="${sb}irq=$v\n"
+	v := bp_get BPJ .sound.dma default
+	[ "$v" != default ] && sb="${sb}dma=$v\n"
+	[ -n "$sb" ] && printf '[sblaster]\n%b' "$sb"
 	return 0
 }
 
@@ -137,7 +186,8 @@ fn bp_conf(box, dir) {
 }
 
 fn boxerplay_open(int id, arg = "") {
-	local box=$arg dir conf title mm
+	local box=$arg dir conf title mm midi
+	local -A snd
 
 	BP[$id]["err"]=
 	BP[$id]["box"]=$box
@@ -165,11 +215,14 @@ fn boxerplay_open(int id, arg = "") {
 	BP[$id]["pic"] := bp_get BPJ .display.render default
 	[ "${BP[$id]["pic"]}" = default ] && BP[$id]["pic"]=$BX_PIC
 	if [ "$BX_SOUND" = off ]; then export HIBR_RETRO_AUDIO=none; fi
+	midi := bp_get BPJ .midi default
+	[ "$midi" = default ] && midi=$BX_MIDI
+	[ "$midi" = disabled ] || bp_midilink
 	mm := bp_get BPJ .mouse default
 	[ "$mm" = default ] && mm=$BX_MOUSE
 	mm := bp_mousemode "$mm"
 	BP[$id]["p"] := retro open "$BP_CORE" "$conf" -s "$BP_SYS" -S "$box/saves" \
-		-o "dosbox_pure_mouse_input=$mm" 2>&1 ||
+		-o "dosbox_pure_mouse_input=$mm" -o "dosbox_pure_midi=$midi" 2>&1 ||
 		{
 			BP[$id]["err"]="DOSBox Pure would not start: ${BP[$id]["p"]}"
 			return 0
@@ -177,6 +230,10 @@ fn boxerplay_open(int id, arg = "") {
 	retro aspect "${BP[$id]["p"]}" "${BP[$id]["aspect"]}" 2> /dev/null
 	retro hold "${BP[$id]["p"]}" "$BX_HOLD" 2> /dev/null
 	BP[$id]["fd"] := retro fd "${BP[$id]["p"]}"
+	snd := retro info "${BP[$id]["p"]}"
+	if [ "$BX_SOUND" = on ] && [ "${snd[output]-}" = none ]; then
+		dt_notep low "Boxer found no sound device, so the game is silent"
+	fi
 	command -v console > /dev/null && console watch "${BP[$id]["fd"]}"
 	BP[$id]["t0"]=$EPOCHSECONDS
 	dt_retitle "$id" "${BP[$id]["name"]}"

@@ -132,6 +132,8 @@ for _ in range(20):
     if "Boxer Game" in t.screen().text():
         break
 check("Enter opens the selected game in a window of its own", "Boxer Game" in t.screen().text(), t.screen())
+check("and it is the selected one, not whichever is first: the window is titled Beta Racer and is not an error",
+      "Beta Racer" in t.screen().text() and "Not a gamebox" not in t.screen().text(), t.screen())
 t.close()
 
 
@@ -178,6 +180,48 @@ doc = open(os.path.join(shelf, "Alpha Quest.boxer", "gamebox.json")).read()
 check("and the next one down too (Speed)", '"cycles": "auto"' in doc, doc)
 t.close()
 
+
+# A right click on a game opens its own menu; Get Info opens the settings in a window of their own, the same fields.
+t = shelfdesk(False)
+t.collect(1.5)
+sc = t.screen()
+rb, cb = sc.find("Beta Racer")
+t.send(sx.press(rb - 3, cb + 2, 2) + sx.release(rb - 3, cb + 2, 2))
+t.collect(1.0)
+check("a right click on a game opens its menu with Play, Get Info and Show in Files",
+      all(w in t.screen().text() for w in ("Play", "Get Info", "Show in Files")), t.screen())
+t.send(b"\x1b[B")
+t.send(b"\r")
+t.collect(1.2)
+sc = t.screen()
+check("Get Info opens the game's settings: program, speed, graphics, sound card, IRQ, DMA, port, MIDI, mouse",
+      all(w in sc.text() for w in ("Beta Racer Settings", "Program", "Speed", "Graphics", "Sound Card", "Sound IRQ",
+                                   "Sound DMA", "Sound Port", "MIDI", "Mouse")), sc)
+t.send(b"\x1b[B" * 6 + b"\x1b[C")
+t.collect(0.8)
+doc = open(os.path.join(shelf, "Beta Racer.boxer", "gamebox.json")).read()
+check("a field changed in that window (Sound IRQ) is written into the box", '"irq": "3"' in doc, doc)
+t.close()
+
+# MIDI: the synths in the folder are listed as DOSBox Pure knows them, and linked into its system folder.
+md = os.path.join(D, "midi")
+os.makedirs(md)
+for f in ("MT32_CONTROL.ROM", "MT32_PCM.ROM", "ROM1.BIN", "gm.sf2", "notes.txt", "WAVEROM1.BIN"):
+    open(os.path.join(md, f), "w").write("x")
+sysd = os.path.join(D, "sysmidi")
+os.makedirs(sysd)
+q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxerplay.hibr\nBX_MIDIDIR=%s\nBP_SYS=%s\n"
+                    "echo \"list=$(bp_midilist | tr '\\n' ' ')\"; bp_midilink; ls %s | tr '\\n' ' '"
+                    % (load("console"), DESK, ROOT, md, sysd, sysd)],
+                   capture_output=True, text=True, env=dict(os.environ, **ENVBASE), timeout=60)
+check("the folder's synths are listed (an MT-32 control ROM, an SC-55 ROM1.BIN, a SoundFont; not the rest)",
+      "list=MT32_CONTROL.ROM gm.sf2 ROM1.BIN" in q.stdout.replace("  ", " ") or
+      all(w in q.stdout.split("list=")[1].split("\n")[0] for w in ("MT32_CONTROL.ROM", "gm.sf2", "ROM1.BIN"))
+      and "notes.txt" not in q.stdout.split("list=")[1].split("\n")[0] and "WAVEROM1" not in q.stdout.split("list=")[1].split("\n")[0],
+      q.stdout + q.stderr)
+check("and every ROM and SoundFont is linked into the core's system folder, the PCM ROM too",
+      all(os.path.islink(os.path.join(sysd, f)) for f in ("MT32_CONTROL.ROM", "MT32_PCM.ROM", "ROM1.BIN", "gm.sf2"))
+      and not os.path.exists(os.path.join(sysd, "notes.txt")), os.listdir(sysd))
 
 # Import: a folder, a zip and a lone installer each become a box; the program named for its folder is the one
 # to launch, installers and tools sink, a lone installer marks the box, and the same name is not overwritten.
@@ -369,10 +413,12 @@ check("Save makes the folder", os.path.isdir(target), os.listdir(D))
 # What the drawer wrote is what DOSBox is told: sections after the person's own, so they win.
 out, err = imp(". %s/apps/boxerplay.hibr" % ROOT,
                "b='%s/Alpha Quest.boxer'; json parse BPJ \"$(< \"$b/gamebox.json\")\"; mkdir -p %s/tune; "
-               "json set BPJ .machine vgaonly -s; json set BPJ .sound.card none -s; json set BPJ .cpu.cycles 8000 -s; "
+               "json set BPJ .machine vgaonly -s; json set BPJ .sound.card sbpro2 -s; json set BPJ .sound.irq 5 -s; "
+               "json set BPJ .sound.dma 3 -s; json set BPJ .sound.port 240 -s; json set BPJ .cpu.cycles 8000 -s; "
                "f := bp_conf \"$b\" %s/tune; cat \"$f\"" % (shelf, D, D))
 check("a game's speed, graphics and sound are written into the conf after the person's own",
-      "[cpu]\ncycles=8000" in out and "[dosbox]\nmachine=vgaonly" in out and "[sblaster]\nsbtype=none" in out
+      "[cpu]\ncycles=8000" in out and "[dosbox]\nmachine=vgaonly" in out
+      and "[sblaster]\nsbtype=sbpro2\nsbbase=240\nirq=5\ndma=3" in out
       and out.index("cycles=max") < out.index("cycles=8000"), out + err)
 
 shutil.rmtree(D, True)

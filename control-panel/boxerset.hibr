@@ -9,7 +9,7 @@
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.1
+app boxerset "The Control Panel pane for Boxer" 0.2
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
 	dt_app bxfield "Shelf Folder" 9 64 "" "" fixed hidden
@@ -34,7 +34,10 @@ BX_FULLKEY="${BX_FULLKEY-alt-enter}"
 BX_HOLD="${BX_HOLD-120}"
 BX_SOUND="${BX_SOUND-on}"
 BX_MOUSE="${BX_MOUSE-direct}"
-command -v dt_keep > /dev/null && dt_keep BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE
+BX_CARD="${BX_CARD-sb16}"
+BX_MIDIDIR="${BX_MIDIDIR-}"
+BX_MIDI="${BX_MIDI-disabled}"
+command -v dt_keep > /dev/null && dt_keep BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_CARD BX_MIDIDIR BX_MIDI
 
 # follow is Control Panel > Pictures, as the wallpaper's and YouTube's are.
 BXS_PICS=(follow pixels half)
@@ -42,6 +45,7 @@ BXS_ASPECTS=(4:3 auto 16:10 16:9 1:1)
 BXS_KEYS=(alt-enter f11 f12 ctrl-f none)
 BXS_HOLDS=(60 120 200 300 500)
 BXS_MICE=(direct relative off)
+BXS_CARDS=(sb16 sbpro2 sb1 none)
 declare -gA BXF
 
 fn cp_set_bxpic(int? id = "", value = "") { BX_PIC=$value; cp_save; }
@@ -49,6 +53,21 @@ fn cp_set_bxaspect(int? id = "", value = "") { BX_ASPECT=$value; cp_save; }
 fn cp_set_bxkey(int? id = "", value = "") { BX_FULLKEY=$value; cp_save; }
 fn cp_set_bxhold(int? id = "", value = "") { BX_HOLD=$value; cp_save; }
 fn cp_set_bxmouse(int? id = "", value = "") { BX_MOUSE=$value; cp_save; }
+fn cp_set_bxcard(int? id = "", value = "") { BX_CARD=$value; cp_save; }
+fn cp_set_bxmidi(int? id = "", value = "") { BX_MIDI=$value; cp_save; }
+
+# The MIDI outputs on offer: none, and whatever synths the folder holds.
+fn bxs_midis() {
+	local l
+
+	l=disabled
+	if dt_has bp_midilist; then
+		while IFS= read -r f; do
+			[ -n "$f" ] && l="$l $f"
+		done <<< "$(bp_midilist)"
+	fi
+	ret "$l"
+}
 
 fn boxerset_rows(int w) {
 	local n=0
@@ -79,44 +98,66 @@ fn boxerset_rows(int w) {
 	CP[$w][$n]["wtype"]=bool
 	CP[$w][$n]["val"]=off; [ "$BX_SOUND" = on ] && CP[$w][$n]["val"]=on
 	CP[$w][$n]["key"]=sound; n=$((n + 1))
+	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Sound Card"
+	CP[$w][$n]["val"]="$BX_CARD"; CP[$w][$n]["key"]=card
+	n=$((n + 1))
+	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="MIDI"; n=$((n + 1))
+	CP[$w][$n]["kind"]=action; CP[$w][$n]["text"]="Synth Folder${GL[ellipsis]}"
+	CP[$w][$n]["val"]="${BX_MIDIDIR:-none}"; CP[$w][$n]["key"]=mididir
+	n=$((n + 1))
+	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="MIDI Output"
+	CP[$w][$n]["val"]="$BX_MIDI"; CP[$w][$n]["key"]=midi
+	n=$((n + 1))
 	ret "$n"
 }
 
 fn boxerset_do(int? w = "", k = "", int? dir = "") {
-	local v
+	local v m
+	local -a ml
 
 	case $k in
-	shelf) bxs_dialog; return 0 ;;
+	shelf) bxs_dialog shelf; return 0 ;;
 	pic) v := cp_next "$BX_PIC" "$dir" "${BXS_PICS[@]}"; BX_PIC=$v ;;
 	aspect) v := cp_next "$BX_ASPECT" "$dir" "${BXS_ASPECTS[@]}"; BX_ASPECT=$v ;;
 	fullkey) v := cp_next "$BX_FULLKEY" "$dir" "${BXS_KEYS[@]}"; BX_FULLKEY=$v ;;
 	hold) v := cp_next "$BX_HOLD" "$dir" "${BXS_HOLDS[@]}"; BX_HOLD=$v ;;
 	mouse) v := cp_next "$BX_MOUSE" "$dir" "${BXS_MICE[@]}"; BX_MOUSE=$v ;;
 	sound) [ "$BX_SOUND" = on ] && BX_SOUND=off || BX_SOUND=on ;;
+	card) v := cp_next "$BX_CARD" "$dir" "${BXS_CARDS[@]}"; BX_CARD=$v ;;
+	mididir) bxs_dialog midi; return 0 ;;
+	midi) m := bxs_midis; read -ra ml <<< "$m"; v := cp_next "$BX_MIDI" "$dir" "${ml[@]}"; BX_MIDI=$v ;;
 	esac
 	cp_save
 }
 
 fn boxerset_drop(int? w = "", int? r = "", int? c = "", k = "") {
+	local m
+	local -a ml
+
 	case $k in
 	pic) dt_droplist "$w" "$r" "$c" cp_set_bxpic "${BXS_PICS[@]}" ;;
 	aspect) dt_droplist "$w" "$r" "$c" cp_set_bxaspect "${BXS_ASPECTS[@]}" ;;
 	fullkey) dt_droplist "$w" "$r" "$c" cp_set_bxkey "${BXS_KEYS[@]}" ;;
 	hold) dt_droplist "$w" "$r" "$c" cp_set_bxhold "${BXS_HOLDS[@]}" ;;
 	mouse) dt_droplist "$w" "$r" "$c" cp_set_bxmouse "${BXS_MICE[@]}" ;;
+	card) dt_droplist "$w" "$r" "$c" cp_set_bxcard "${BXS_CARDS[@]}" ;;
+	midi) m := bxs_midis; read -ra ml <<< "$m"; dt_droplist "$w" "$r" "$c" cp_set_bxmidi "${ml[@]}" ;;
 	esac
 }
 
 # --- the shelf folder dialog --------------------------------------------------
 
 # One field: the folder, typed, a ~ meaning the home folder.
-fn bxs_dialog() {
-	local h=9 w=64 r c rid
+fn bxs_dialog(what = shelf) {
+	local h=9 w=64 r c rid title="Shelf Folder"
 
 	dt_dlgat "$h" "$w"
 	r=$DT_DLGR c=$DT_DLGC h=$DT_DLGH w=$DT_DLGW
-	rid := dt_new "Shelf Folder" "$h" "$w" "$r" "$c" bxfield
+	[ "$what" = midi ] && title="MIDI Synth Folder"
+	rid := dt_new "$title" "$h" "$w" "$r" "$c" bxfield
+	BXF[$rid]["what"]=$what
 	BXF[$rid]["path"]=$BX_SHELF
+	[ "$what" = midi ] && BXF[$rid]["path"]=$BX_MIDIDIR
 	BXF[$rid]["cur"]=${#BXF[$rid]["path"]}
 	BXF[$rid]["focus"]=path
 }
@@ -126,12 +167,20 @@ fn bxfield_draw(int id, int h, int w, int row, int col) {
 
 	dt_wclear "$id"
 	console pen "$DT_INK" "$DT_FACE"
-	dt_tput "$id" 1 2 "Games are kept in this folder, one NAME.boxer to a game:"
+	if [ "${BXF[$id]["what"]}" = midi ]; then
+		dt_tput "$id" 1 2 "The folder with your SoundFonts (.sf2) and Roland ROMs:"
+	else
+		dt_tput "$id" 1 2 "Games are kept in this folder, one NAME.boxer to a game:"
+	fi
 	[ "$f" = path ] && { on=1; cur=${BXF[$id]["cur"]}; }
 	dt_textdraw "$id" 3 2 $((w - 4)) "${BXF[$id]["path"]}" "$cur" "$on"
 	dt_wreg "$id" 3 2 $((w - 4)) path
 	console pen "$DT_DIM" "$DT_FACE"
-	dt_tput "$id" 5 2 "It is made if it is not there. Games already in the old one stay there."
+	if [ "${BXF[$id]["what"]}" = midi ]; then
+		dt_tput "$id" 5 2 "MT32_CONTROL.ROM with MT32_PCM.ROM, ROM1.BIN, or a .sf2. Empty for none."
+	else
+		dt_tput "$id" 5 2 "It is made if it is not there. Games already in the old one stay there."
+	fi
 	dt_dlgbtns "$id" "$h" "$w" "$f" ok Save cancel Cancel
 }
 
@@ -140,6 +189,16 @@ fn bxfield_ok(int id) {
 
 	p=${p//[$'\t\n']/ }
 	case $p in "~") p=$HOME ;; "~/"*) p="$HOME/${p#"~/"}" ;; esac
+	if [ "${BXF[$id]["what"]}" = midi ]; then
+		if [ -n "${p// /}" ] && [ ! -d "$p" ]; then
+			dt_notep high "There is no such folder"
+			return 0
+		fi
+		BX_MIDIDIR=$p
+		cp_save
+		dt_del "$id"
+		return 0
+	fi
 	if [ -z "${p// /}" ]; then
 		dt_notep high "A shelf needs a folder"
 		return 0

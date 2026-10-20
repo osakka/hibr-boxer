@@ -17,11 +17,12 @@
 strict
 
 
-app boxer "DOS games on a shelf" 0.2
+app boxer "DOS games on a shelf" 0.3
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
 command -v dt_app > /dev/null && dt_app boxer "Boxer" 40 100 "" "▣"
+command -v dt_app > /dev/null && dt_app boxerinfo "Game Settings" 17 60 "" "" fixed hidden
 command -v dt_keepstate > /dev/null && dt_keepstate boxer BX
 
 declare -gA BX BXJ
@@ -359,8 +360,11 @@ fn bx_tile(int id, int i, int r, int c) {
 # over what Control Panel > Boxer says for every game ("default" means that).
 
 BX_IW=38
-BXI_FIELDS=(prog render aspect cycles machine sound mouse)
-BXI_LABELS=("Program" "Rendering" "Shape" "Speed" "Graphics" "Sound Card" "Mouse")
+BXI_FIELDS=(prog render aspect cycles machine sound irq dma port midi mouse)
+BXI_LABELS=("Program" "Rendering" "Shape" "Speed" "Graphics" "Sound Card" "Sound IRQ" "Sound DMA" "Sound Port" "MIDI" "Mouse")
+BXI_IRQ=(default 3 5 7 9 10 11 12)
+BXI_DMA=(default 0 1 3 5 6 7)
+BXI_PORT=(default 210 220 230 240 250 260 280)
 BXI_RENDER=(default follow pixels half)
 BXI_ASPECT=(default 4:3 auto 16:10 16:9 1:1)
 BXI_CYCLES=(default auto max 3000 8000 20000 50000)
@@ -377,13 +381,24 @@ fn bxi_path(field) {
 	cycles) ret .cpu.cycles ;;
 	machine) ret .machine ;;
 	sound) ret .sound.card ;;
+	irq) ret .sound.irq ;;
+	dma) ret .sound.dma ;;
+	port) ret .sound.port ;;
+	midi) ret .midi ;;
 	mouse) ret .mouse ;;
 	esac
 }
 
 # Read the selected game's settings into the window's state.
 fn bx_info_load(int id) {
-	local k=${BX[$id]["sel"]:-0} box=${BX[$id]["box$k"]-} f v n i p
+	local k=${BX[$id]["sel"]:-0}
+
+	bx_info_loadbox "$id" "${BX[$id]["box$k"]-}"
+}
+
+# The same, for the box at this path: the settings dialog has no shelf.
+fn bx_info_loadbox(int id, box) {
+	local f v n i p
 
 	BX[$id]["ibox"]=$box
 	BX[$id]["iprogs"]=
@@ -425,6 +440,8 @@ fn bxi_pick(int id, value = "") {
 
 # The choices for a field.
 fn bxi_choices(int id, field) {
+	local l f
+
 	case $field in
 	prog) ret "${BX[$id]["iprogs"]}" ;;
 	render) ret "${BXI_RENDER[*]}" ;;
@@ -432,6 +449,10 @@ fn bxi_choices(int id, field) {
 	cycles) ret "${BXI_CYCLES[*]}" ;;
 	machine) ret "${BXI_MACHINE[*]}" ;;
 	sound) ret "${BXI_SOUND[*]}" ;;
+	irq) ret "${BXI_IRQ[*]}" ;;
+	dma) ret "${BXI_DMA[*]}" ;;
+	port) ret "${BXI_PORT[*]}" ;;
+	midi) l="default disabled"; if dt_has bp_midilist; then while IFS= read -r f; do [ -n "$f" ] && l="$l $f"; done <<< "$(bp_midilist)"; fi; ret "$l" ;;
 	mouse) ret "${BXI_MOUSE[*]}" ;;
 	esac
 }
@@ -464,10 +485,25 @@ fn bxi_step(int id, field, int dir) {
 	bx_info_set "$id" "$field" "${o[$k]}"
 }
 
+# The fields, a row each from row r0: the name, then its choice as a drop-down.
+fn bx_info_fields(int id, int r0, int c0, int w, focused) {
+	local i f r on
+
+	for i in "${!BXI_FIELDS[@]}"; do
+		f=${BXI_FIELDS[$i]}
+		r=$((r0 + i))
+		on=0
+		[ "$focused" = 1 ] && [ "${BX[$id]["ifield"]:-0}" = "$i" ] && on=1
+		if [ "$on" = 1 ]; then console pen "$DT_SELINK" "$DT_ACTIVE"; else console pen "$DT_INK" "$DT_FACE"; fi
+		dt_tput "$id" "$r" "$c0" "${BXI_LABELS[$i]}"
+		console pen "$DT_INK" "$DT_FACE"
+		dt_wdrop "$id" "$r" $((c0 + 12)) $((w - 12)) "${BX[$id]["i_$f"]:-default}" "$f"
+	done
+	return 0
+}
+
 # The drawer, from column c0 of the window's body.
 fn bx_info_draw(int id, int h, int c0, int w) {
-	local i f r on lab
-
 	console pen "$DT_DIM" "$DT_FACE"
 	console fill -p "w$id" 1 "$c0" $((h - 2)) 1 "│"
 	c0=$((c0 + 2))
@@ -476,19 +512,39 @@ fn bx_info_draw(int id, int h, int c0, int w) {
 	dt_tput "$id" 2 "$c0" "${BX[$id]["ttl${BX[$id]["sel"]:-0}"]:0:$w}"
 	console pen "$DT_DIM" "$DT_FACE"
 	dt_tput "$id" 3 "$c0" "Settings for this game"
-	for i in "${!BXI_FIELDS[@]}"; do
-		f=${BXI_FIELDS[$i]}
-		r=$((5 + i * 2))
-		on=0
-		[ "${BX[$id]["focus"]-}" = drawer ] && [ "${BX[$id]["ifield"]:-0}" = "$i" ] && on=1
-		if [ "$on" = 1 ]; then console pen "$DT_SELINK" "$DT_ACTIVE"; else console pen "$DT_INK" "$DT_FACE"; fi
-		dt_tput "$id" "$r" "$c0" "${BXI_LABELS[$i]}"
-		console pen "$DT_INK" "$DT_FACE"
-		dt_wdrop "$id" $((r + 1)) "$c0" "$w" "${BX[$id]["i_$f"]:-default}" "$f"
-	done
-	r=$((5 + ${#BXI_FIELDS[@]} * 2))
+	bx_info_fields "$id" 5 "$c0" "$w" "$([ "${BX[$id]["focus"]-}" = drawer ] && echo 1 || echo 0)"
 	console pen "$DT_DIM" "$DT_FACE"
-	dt_tput "$id" "$r" "$c0" "default: as Control Panel > Boxer"
+	dt_tput "$id" $((6 + ${#BXI_FIELDS[@]})) "$c0" "default: as Control Panel > Boxer"
+	return 0
+}
+
+# A key for the fields: up and down choose one, left and right step its
+# value, Enter opens its choices. Status 1 when it was not one of those.
+fn bxi_key(int id, key, int r0, int c0) {
+	local i=${BX[$id]["ifield"]:-0} nf=${#BXI_FIELDS[@]} f
+
+	f=${BXI_FIELDS[$i]}
+	case $key in
+	up) BX[$id]["ifield"]=$(((i + nf - 1) % nf)) ;;
+	down) BX[$id]["ifield"]=$(((i + 1) % nf)) ;;
+	left) bxi_step "$id" "$f" -1 ;;
+	right | " ") bxi_step "$id" "$f" 1 ;;
+	enter) bxi_open "$id" "$f" $((r0 + i)) $((c0 + 12)) ;;
+	*) return 1 ;;
+	esac
+	return 0
+}
+
+# A click on a field: it becomes the chosen one and its choices open.
+fn bxi_click(int id, int r, int c) {
+	local tag i f
+
+	tag := dt_hit "$id" "$r" "$c" || return 1
+	for i in "${!BXI_FIELDS[@]}"; do
+		[ "${BXI_FIELDS[$i]}" = "$tag" ] && { BX[$id]["ifield"]=$i; f=$tag; }
+	done
+	[ -n "${f-}" ] || return 1
+	bxi_open "$id" "$f" "$r" "$c"
 	return 0
 }
 
@@ -568,7 +624,9 @@ fn bx_info_toggle(int id) {
 
 # Play the selected game in a window of its own.
 fn bx_play(int id) {
-	local k=${BX[$id]["sel"]:-0} box=${BX[$id]["box$k"]}
+	local k=${BX[$id]["sel"]:-0} box
+
+	box=${BX[$id]["box$k"]-}
 
 	[ -n "$box" ] || return 0
 	dt_launch boxerplay "$box" > /dev/null ||
@@ -592,18 +650,12 @@ fn boxer_key(int id, key) {
 			return 0 ;;
 		esac
 		if [ "${BX[$id]["focus"]-}" = drawer ]; then
-			f=${BXI_FIELDS[$i]}
 			case $key in
-			up) BX[$id]["ifield"]=$(((i + nf - 1) % nf)) ;;
-			down) BX[$id]["ifield"]=$(((i + 1) % nf)) ;;
-			left) bxi_step "$id" "$f" -1 ;;
-			right | " ") bxi_step "$id" "$f" 1 ;;
-			enter) bxi_open "$id" "$f" $((6 + i * 2)) $((${BX[$id]["gw"]:-0} + 3)) ;;
-			escape) BX[$id]["focus"]=grid ;;
-			i) bx_info_toggle "$id" ;;
-			*) return 1 ;;
+			escape) BX[$id]["focus"]=grid; return 0 ;;
+			i) bx_info_toggle "$id"; return 0 ;;
 			esac
-			return 0
+			bxi_key "$id" "$key" 5 $((${BX[$id]["gw"]:-0} + 2))
+			return $?
 		fi
 	fi
 	case $key in
@@ -628,18 +680,13 @@ fn boxer_click(int id, int r, int c, btn = "") {
 	local cols=${BX[$id]["cols"]:-1} top=${BX[$id]["top"]:-0} k tr tc dbl=0 tag f i
 
 	if [ "${BX[$id]["info"]:-0}" = 1 ]; then
-		if tag := dt_hit "$id" "$r" "$c"; then
-			for i in "${!BXI_FIELDS[@]}"; do
-				[ "${BXI_FIELDS[$i]}" = "$tag" ] && { BX[$id]["ifield"]=$i; f=$tag; }
-			done
+		if bxi_click "$id" "$r" "$c"; then
 			BX[$id]["focus"]=drawer
-			[ -n "${f-}" ] && bxi_open "$id" "$f" "$r" "$c"
 			return 0
 		fi
 		[ "$c" -gt "${BX[$id]["gw"]:-0}" ] && return 0
 		BX[$id]["focus"]=grid
 	fi
-
 	[ "${BX[$id]["n"]:-0}" -gt 0 ] || return 0
 	[ "$r" -ge 2 ] && [ "$c" -ge 2 ] || return 0
 	tr=$(((r - 2) / BX_TH))
@@ -705,6 +752,102 @@ fn bx_pick(int id) {
 }
 
 fn boxer_close(int id) {
+	unset "BX[$id]"
+}
+
+# A press: left as a click, right selects the tile under it and opens the
+# tile's own menu. (An app with a _mouse is told every press, drag and release
+# here, and a right press never reaches _click.)
+fn boxer_mouse(int id, act, btn, int r, int c, mods = "") {
+	local cols=${BX[$id]["cols"]:-1} top=${BX[$id]["top"]:-0} k tr tc
+
+	case ${act##*-} in press) ;; *) return 0 ;; esac
+	if [ "$btn" != right ]; then
+		boxer_click "$id" "$r" "$c" "$btn"
+		return 0
+	fi
+	[ "${BX[$id]["n"]:-0}" -gt 0 ] || return 0
+	[ "$r" -ge 2 ] && [ "$c" -ge 2 ] && [ "$c" -le "${BX[$id]["gw"]:-9999}" ] || return 0
+	tr=$(((r - 2) / BX_TH))
+	tc=$(((c - 2) / BX_TW))
+	[ "$tc" -lt "$cols" ] || return 0
+	k=$(((top + tr) * cols + tc))
+	[ "$k" -lt "${BX[$id]["n"]}" ] || return 0
+	bx_select "$id" "$k"
+	dt_context_open boxer "$id" "$r" "$c"
+	return 0
+}
+
+# What a game's own menu holds.
+fn boxer_context(int id) {
+	dt_menu "Game"
+	dt_item "Play" p bx_play "$id"
+	dt_item "Get Info${GL[ellipsis]}" i bx_getinfo "$id"
+	dt_sep
+	dt_item "Show in Files" f bx_reveal "$id"
+}
+
+# Open the game's settings in a window of their own.
+fn bx_getinfo(int id) {
+	local k=${BX[$id]["sel"]:-0} box
+
+	box=${BX[$id]["box$k"]-}
+
+	[ -n "$box" ] || return 0
+	dt_launch boxerinfo "$box" > /dev/null
+	return 0
+}
+
+fn bx_reveal(int id) {
+	local k=${BX[$id]["sel"]:-0} box
+
+	box=${BX[$id]["box$k"]-}
+
+	[ -n "$box" ] || return 0
+	dt_launch files "${box%/*}" > /dev/null
+	return 0
+}
+
+# --- the Game Settings window --------------------------------------------------
+#
+# The same fields as the drawer, in a window of their own, opened with the path
+# of a box: from a right click on a game, and, once Files opens a folder by its
+# extension (hibr #318), from the same menu there.
+
+fn boxerinfo_open(int id, arg = "") {
+	bx_info_loadbox "$id" "$arg"
+	BX[$id]["ifield"]=0
+	BX[$id]["name"]=${arg##*/}
+	BX[$id]["name"]=${BX[$id]["name"]%.*}
+	dt_retitle "$id" "${BX[$id]["name"]} Settings"
+}
+
+fn boxerinfo_draw(int id, int h, int w, int row, int col) {
+	dt_wclear "$id"
+	console pen "$DT_INK" "$DT_FACE"
+	console fill -p "w$id" 1 1 $((h - 2)) $((w - 2)) " "
+	console pen "$DT_INK" "$DT_FACE" bold
+	dt_tput "$id" 1 2 "${BX[$id]["name"]:0:$((w - 4))}"
+	bx_info_fields "$id" 3 2 $((w - 4)) 1
+	console pen "$DT_DIM" "$DT_FACE"
+	dt_tput "$id" $((4 + ${#BXI_FIELDS[@]})) 2 "default: as Control Panel > Boxer. Up, down, left, right, enter."
+	return 0
+}
+
+fn boxerinfo_key(int id, key) {
+	case $key in
+	escape) dt_del "$id"; return 0 ;;
+	esac
+	bxi_key "$id" "$key" 3 2
+	return 0
+}
+
+fn boxerinfo_click(int id, int r, int c, btn = "") {
+	bxi_click "$id" "$r" "$c"
+	return 0
+}
+
+fn boxerinfo_close(int id) {
 	unset "BX[$id]"
 }
 
