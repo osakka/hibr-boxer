@@ -6,7 +6,18 @@
 #include <unistd.h>
 
 /* Run a core on a game for a while and write its latest frame as a PPM: rl_shot core game sysdir savedir secs out.ppm [keycode]: with a keycode, that RETROK_ key is tapped
-   halfway. */
+   once the program has drawn something, and the shot is taken two seconds later; secs is then the longest to wait for it. */
+
+/* How many pixels of a frame are bright: a program that has drawn something. */
+int rl_lit(const unsigned char *f, int w, int h)
+{
+	int i, n = 0;
+
+	for (i = 0; i < w * h; i++)
+		if (f[i * 3] > 128)
+			n++;
+	return n;
+}
 
 int main(int argc, char **argv)
 {
@@ -28,11 +39,19 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	if (argc > 7) {
-		sleep((unsigned)atoi(argv[5]) / 2);
+		int i, n = atoi(argv[5]) * 10;
+
+		for (i = 0; i < n; i++) {
+			f = rl_lock(r, &w, &h, &seq);
+			if (f && rl_lit(f, w, h) > 50)
+				break;
+			usleep(100000);
+		}
+		usleep(500000);
 		rl_key(r, (unsigned)atoi(argv[7]), 0, 0, 1);
 		usleep(150000);
 		rl_key(r, (unsigned)atoi(argv[7]), 0, 0, 0);
-		sleep((unsigned)atoi(argv[5]) - (unsigned)atoi(argv[5]) / 2);
+		sleep(2);
 	} else
 		sleep((unsigned)atoi(argv[5]));
 	f = rl_lock(r, &w, &h, &seq);

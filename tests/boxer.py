@@ -24,7 +24,7 @@ def gamebox(name="Test Game"):
     os.makedirs(b + "/engine")
     os.makedirs(b + "/drives/c/GAME")
     open(b + "/drives/c/GAME/RUN.EXE", "w").write("x")
-    open(b + "/engine/dosbox.conf", "w").write("[cpu]\ncycles=max\n")
+    open(b + "/engine/dosbox.conf", "w").write("[cpu]\ncycles=max\n[autoexec]\necho mine\n[sdl]\nfullscreen=false\n")
     open(b + "/gamebox.json", "w").write(
         '{"gamebox":1,"title":"%s","engine":"dosbox",'
         '"launch":{"program":"C:\\\\GAME\\\\RUN.EXE","args":"-fast"},'
@@ -58,6 +58,8 @@ check("the person's own settings come first", "[cpu]\ncycles=max" in out, out[:3
 check("C: is the gamebox's drives/c", 'mount c "%s/drives/c"' % box in out, out)
 check("a CD image is mounted on its drive", 'imgmount d "%s/drives/d/game.cue" -t iso' % box in out, out)
 check("the program's folder is entered and the program run", "cd \\GAME\nRUN.EXE -fast" in out.replace("\r", ""), out)
+check("a [autoexec] of the person's own is dropped, and what follows it kept",
+      "echo mine" not in out and "fullscreen=false" in out and out.count("[autoexec]") == 1, out)
 check("the autoexec comes last, so the settings cannot override it", "[autoexec]" in out and out.index("[cpu]") < out.index("[autoexec]"), out)
 
 for pix in (True, False):
@@ -127,11 +129,34 @@ check("the arrow key moves the selection", sc2.style(sc.find("Beta Racer")[0], s
 t.send(b"\r")
 for _ in range(20):
     t.collect(0.3)
-    if t.screen().text().count("Beta Racer") >= 2:
+    if "Boxer Game" in t.screen().text():
         break
-check("Enter opens the selected game in a window of its own", t.screen().text().count("Beta Racer") >= 2, t.screen())
+check("Enter opens the selected game in a window of its own", "Boxer Game" in t.screen().text(), t.screen())
 t.close()
 
+
+# Double click: a press on a tile selects it; two presses on the same tile plays it, and two on different
+# tiles in a row does not.
+t = shelfdesk(False)
+t.collect(1.5)
+sc = t.screen()
+ra, ca = sc.find("Alpha Quest")
+rb, cb = sc.find("Beta Racer")
+t.send(sx.press(ra, ca + 2) + sx.release(ra, ca + 2) + sx.press(rb - 3, cb + 2) + sx.release(rb - 3, cb + 2))
+t.collect(1.0)
+check("a press on one tile then another does not play either", "Boxer Game" not in t.screen().text(),
+      t.screen())
+one = sx.press(rb - 3, cb + 2) + sx.release(rb - 3, cb + 2)
+t.send(one)
+t.collect(0.15)
+t.send(one)
+for _ in range(20):
+    t.collect(0.3)
+    if "Boxer Game" in t.screen().text():
+        break
+check("a second press on the same tile plays that game in a window of its own",
+      "Boxer Game" in t.screen().text(), t.screen())
+t.close()
 
 # Import: a folder, a zip and a lone installer each become a box; the program named for its folder is the one
 # to launch, installers and tools sink, a lone installer marks the box, and the same name is not overwritten.

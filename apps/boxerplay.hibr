@@ -11,7 +11,8 @@
 # The gamebox says what to run: its gamebox.json names a program (and its
 # arguments) and any CD or floppy images, and engine/dosbox.conf holds the
 # person's own DOSBox settings. At launch they are put together into one
-# run.conf in the runtime folder -- the settings first, then an [autoexec]
+# run.conf in the runtime folder -- the settings first (an [autoexec] of
+# their own is dropped: this one is the last word), then an [autoexec]
 # that mounts drives/c as C: and starts the program -- and DOSBox Pure is
 # given that file as its content, so the game sees a DOS machine set up the
 # way the gamebox asks and nothing outside the gamebox is touched. The
@@ -73,7 +74,9 @@ fn bp_conf(box, dir) {
 	args := bp_get BPJ .launch.args
 	{
 		echo "# made by Boxer from $box; edit engine/dosbox.conf, not this"
-		[ -r "$box/engine/dosbox.conf" ] && cat "$box/engine/dosbox.conf"
+		[ -r "$box/engine/dosbox.conf" ] && awk '
+			/^[ \t]*\[/ { skip = (tolower($0) ~ /^[ \t]*\[autoexec\]/) }
+			!skip' "$box/engine/dosbox.conf"
 		echo
 		echo "[autoexec]"
 		echo "@echo off"

@@ -65,3 +65,5 @@ Sound goes to PipeWire/Pulse/ALSA/AudioQueue as in hibr's `media`; `HIBR_RETRO_A
 `cores/build.sh WORKDIR OUTDIR` builds DOSBox Pure from the revision in `cores/PINS`; it loads and runs through `retro open` at 70 fps. ScummVM also ran (it reopens fine and drew a game) but was dropped for its size, see ADR 0002. `build/rl_shot` (`tests/rl_shot.c`) writes a core's latest frame as PPM.
 
 Checked on the real cores: DOSBox Pure saves and loads a state while a DOS program runs (152 kB), and says so when none runs.
+
+Each reopen of a core file maps another copy that stays resident (a ~3 MB DOSBox Pure per game started after the first); the copies do not unload either. A long session that starts many games accumulates them, and a child-process driver is the answer if that matters. The copy is made in `$XDG_RUNTIME_DIR`, `$TMPDIR` or `/tmp`, whichever is not mounted noexec.

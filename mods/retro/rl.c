@@ -129,35 +129,44 @@ int *rl_run;
 int rl_nlive;
 
 /* Load a core file again as a copy of its own: a core that has run before cannot be trusted to unload, and
-   DOSBox Pure crashes when its image is loaded a second time. The copy is unlinked once it is mapped. */
+   DOSBox Pure crashes when its image is loaded a second time. The copy is made in the runtime folder, then TMPDIR,
+   then /tmp -- the first that lets it be mapped, since one of them may be mounted noexec -- and is unlinked once
+   mapped. Without one, there is no core: loading the same image again is the crash. */
 void *rl_dlcopy(const char *path)
 {
-	const char *t = getenv("TMPDIR");
-	char *tmp = xs(t && *t ? t : "/tmp");
-	char *nm = xm(strlen(tmp) + 24);
+	const char *dirs[3];
 	size_t bn = 1 << 16;
 	char *buf = xm(bn);
 	void *h = 0;
-	int in, out;
-	ssize_t n;
+	int in, out, d;
+	ssize_t n = 0;
 
-	sprintf(nm, "%s/hibr-retro-XXXXXX", tmp);
-	in = open(path, O_RDONLY);
-	out = in < 0 ? -1 : mkstemp(nm);
-	if (out >= 0) {
-		while ((n = read(in, buf, bn)) > 0)
-			if (write(out, buf, (size_t)n) != n)
-				break;
-		close(out);
-		if (n == 0)
-			h = dlopen(nm, RTLD_NOW | RTLD_LOCAL);
-		unlink(nm);
+	dirs[0] = getenv("XDG_RUNTIME_DIR");
+	dirs[1] = getenv("TMPDIR");
+	dirs[2] = "/tmp";
+	for (d = 0; d < 3 && !h; d++) {
+		char *nm;
+
+		if (!dirs[d] || !*dirs[d])
+			continue;
+		nm = xm(strlen(dirs[d]) + 24);
+		sprintf(nm, "%s/hibr-retro-XXXXXX", dirs[d]);
+		in = open(path, O_RDONLY);
+		out = in < 0 ? -1 : mkstemp(nm);
+		if (out >= 0) {
+			while ((n = read(in, buf, bn)) > 0)
+				if (write(out, buf, (size_t)n) != n)
+					break;
+			close(out);
+			if (n == 0)
+				h = dlopen(nm, RTLD_NOW | RTLD_LOCAL);
+			unlink(nm);
+		}
+		if (in >= 0)
+			close(in);
+		free(nm);
 	}
-	if (in >= 0)
-		close(in);
 	free(buf);
-	free(nm);
-	free(tmp);
 	return h;
 }
 
@@ -751,7 +760,10 @@ void *rl_thread(void *arg)
 	pthread_setspecific(rl_kcur, r);
 	r->dl = r->fresh ? rl_dlcopy(r->core) : dlopen(r->core, RTLD_NOW | RTLD_LOCAL);
 	if (!r->dl) {
-		rl_fail(r, "%s", dlerror());
+		if (r->fresh)
+			rl_fail(r, "no fresh copy of %s could be loaded: %s", r->core, dlerror());
+		else
+			rl_fail(r, "%s", dlerror());
 		goto out;
 	}
 	for (s = rl_syms; s->nm; s++) {

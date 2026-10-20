@@ -308,9 +308,11 @@ fn boxer_key(int id, key) {
 	return 0
 }
 
-# A press picks the tile under it; a second press on it plays it.
+# A press picks the tile under it; a second press on the same tile, soon
+# enough, plays it. dt_isdbl is the window's, not the tile's, so the tile is
+# kept here.
 fn boxer_click(int id, int r, int c, btn = "") {
-	local cols=${BX[$id]["cols"]:-1} top=${BX[$id]["top"]:-0} k tr tc
+	local cols=${BX[$id]["cols"]:-1} top=${BX[$id]["top"]:-0} k tr tc dbl=0
 
 	[ "${BX[$id]["n"]:-0}" -gt 0 ] || return 0
 	[ "$r" -ge 2 ] && [ "$c" -ge 2 ] || return 0
@@ -319,10 +321,12 @@ fn boxer_click(int id, int r, int c, btn = "") {
 	[ "$tc" -lt "$cols" ] || return 0
 	k=$(((top + tr) * cols + tc))
 	[ "$k" -lt "${BX[$id]["n"]}" ] || return 0
+	dt_isdbl "$id" && dbl=1
 	bx_select "$id" "$k"
-	if [ "$btn" = double ] || dt_isdbl "$id" 2> /dev/null; then
+	if [ "$dbl" = 1 ] && [ "${BX[$id]["last"]-}" = "$k" ]; then
 		bx_play "$id"
 	fi
+	BX[$id]["last"]=$k
 	return 0
 }
 
