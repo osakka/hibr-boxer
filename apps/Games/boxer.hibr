@@ -19,7 +19,7 @@ strict
 
 app boxer "DOS games on a shelf" 0.1
 # modules: img retro
-# part: apps/Games/boxerplay.hibr
+# part: apps/boxerplay.hibr
 command -v dt_app > /dev/null && dt_app boxer "Boxer" 40 100 "" "▣"
 command -v dt_keepstate > /dev/null && dt_keepstate boxer BX
 

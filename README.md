@@ -5,7 +5,7 @@ desktop, shelved the way [Boxer](https://boxer.thelaboratory.net/) shelves
 them on a Mac (this is not that application, only inspired by it): one **gamebox** per game, a **shelf** of them with their
 covers, double-click to play.
 
-**Status: working, not yet packaged.** DOSBox Pure runs through our own libretro frontend and is drawn by hibr's renderer; the shelf (`apps/Games/boxer.hibr`) lists gameboxes as a grid of covers, a game plays in a window of its own (`apps/Games/boxerplay.hibr`), and a folder, zip, CD image or program imports into a new gamebox. Design: [docs/DESIGN.md](docs/DESIGN.md); the engine route is
+**Status: working; the deb is in the hibr apt repo and the apps are in hibr-apps.** DOSBox Pure runs through our own libretro frontend and is drawn by hibr's renderer; the shelf (`apps/Games/boxer.hibr`) lists gameboxes as a grid of covers, a game plays in a window of its own (`apps/boxerplay.hibr`), and a folder, zip, CD image or program imports into a new gamebox. Design: [docs/DESIGN.md](docs/DESIGN.md); the engine route is
 [ADR 0001](docs/adr/0001-two-ways-to-put-an-emulator-in-a-window.md) (our own libretro frontend; spike passed, see [docs/spike-1-frame-rate.md](docs/spike-1-frame-rate.md)); DOS only: [ADR 0002](docs/adr/0002-dos-only.md).
 
 ```text
