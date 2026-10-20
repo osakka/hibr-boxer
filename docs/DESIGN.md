@@ -121,9 +121,9 @@ design; **not measured**, see the gate below):
 What route B changes, which is where a large gain can honestly come from:
 
 - Frames arrive **at the core's native size** (e.g. 320x200, 192 kB raw).
-  Send that, and let the terminal scale it: the kitty protocol is given a
-  rectangle in cells and scales for itself (ADR 0037). Fewer pixels sent is
-  the biggest lever there is.
+  The console already sends a kitty picture no larger than its source and lets
+  the terminal scale it (`mods/console/image.c`), so this lever exists today
+  and is not something we add; sixel has no such option, since it paints 1:1.
 - On a **local** kitty-protocol terminal, transmit by shared memory or file
   (`t=s`/`t=t`) instead of base64 over the pty. ADR 0037 names this and
   notes it cannot work over ssh, so it must be a detected fast path, not
@@ -137,7 +137,13 @@ What route B changes, which is where a large gain can honestly come from:
   "10-50x" will not be a number we can promise; the target should be stated
   in frames per second at a given cell size, per protocol, and measured.
 
-**Gate before committing to the full module:** a one-day spike. Time how many
+**Spike 1 result (2026-10-20, [docs/spike-1-frame-rate.md](spike-1-frame-rate.md)):
+the gate passes for kitty and half blocks** (producer cost 3-4 ms and ~0.5-2 ms
+per frame, far inside a 33 ms budget). Kitty is bytes-bound (251 kB a frame,
+15 MB/s at 60 fps), sixel is the weak path (~31 fps at 120x40 on the producer
+alone), and nothing was measured on a real terminal or on `xscr`.
+
+**The gate that was set before committing to the full module:** a one-day spike. Time how many
 native-size 320x200 frames per second the existing `image` path can place for
 half blocks, sixel and kitty (pty and a real terminal), with a synthetic frame
 source and no emulator. If that number is not comfortably above 30 fps for
@@ -296,12 +302,15 @@ Options, in order of preference:
 
 **Hover.** `xscr` documents that the pointer moves only with a button held,
 because the desktop does not ask the terminal for every movement.
-`console mouse motion` exists; a focused game window can request it and drop
-it when focus leaves. ScummVM's point-and-click wants this; DOS games with a
-mouse want it too.
+`console mouse motion` exists but is **not** a cheap switch: hibr's CLAUDE.md
+records that mode 1003 was tried for the Control Strip's hover and reverted,
+because the flood of reports broke shift-drag copy and made selection lag behind
+stale hover reports. The plan is therefore: only the focused game window asks,
+only while focused, with reports coalesced against `console waiting`.
+ScummVM's point-and-click wants this; DOS games with a mouse want it too.
 
 Both are changes in `itdlabs/hibr`, are prerequisites for "double-click and it
-plays", and should be filed there before the Shelf is called done.
+plays", and are filed there: **#315** (key release) and **#316** (hover).
 
 **Frame cost.** ADR 0037 measured film frames: half blocks 0.5 ms / 14 kB at
 100x34 cells, sixel 23 ms / 34 kB, kitty 6.8 ms / 351 kB at half resolution.
@@ -347,7 +356,7 @@ installed"). So the OS package must be installed before the app, and the app's
 | | |
 |---|---|
 | **0** | this repo: README, design, ADR, licence (done) |
-| **1** | the **frame-rate spike** (section 2 gate): synthetic 320x200 frames through `image` in half blocks, sixel and kitty; decides whether to go on |
+| **1** | the **frame-rate spike** (section 2 gate): done, passed for kitty and half blocks, see [spike-1](spike-1-frame-rate.md) |
 | **2** | `mods/retro`: libretro frontend (video, audio, input), loading a core, with a test core; cores for DOSBox and ScummVM built or sourced |
 | **3** | the Shelf: gamebox format and library, shelf window with covers, import, launch through `retro`; a stub-core test suite |
 | **4** | prerequisites in `itdlabs/hibr`: key release, motion on focus (can start in parallel with 2) |
@@ -360,8 +369,7 @@ detection and launch are tested without either installed.
 
 ## 9. Open questions
 
-1. **Route.** B, our own frontend (now recommended), gated on the spike. OK?
-   Cores are the real risk: build libretro's DOSBox and ScummVM cores
+1. **Route.** B, decided 2026-10-20. Cores are the real risk: build libretro's DOSBox and ScummVM cores
    ourselves, or fetch libretro's builds?
 2. **Platforms.** Linux and macOS both from the start? (Route B allows it.)
 3. **Names.** Application "Shelf", extension `.gamebox`, module `retro`? (The

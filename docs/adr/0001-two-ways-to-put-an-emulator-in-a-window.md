@@ -1,6 +1,6 @@
 # 0001 — Two ways to put an emulator in a window
 
-Status: proposed (2026-10-20)
+Status: accepted (2026-10-20); the gate passed, see docs/spike-1-frame-rate.md
 
 ## Context
 
@@ -18,7 +18,7 @@ help, and otherwise to write our own.
   native size, no X, macOS too, save states; needs cores, a module package per
   OS, and an exact `HIBR_ABI` match.
 
-## Decision (proposed)
+## Decision
 
 B. A GPU does not address the cost (emulation is CPU-bound and small; the
 terminal link is the limit, ADR 0037 of hibr), and the hops A adds are the ones

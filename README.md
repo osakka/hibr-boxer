@@ -7,7 +7,7 @@ covers, double-click to play.
 
 **Status: design sketch. Nothing is built.** Read
 [docs/DESIGN.md](docs/DESIGN.md); the engine route is
-[ADR 0001](docs/adr/0001-two-ways-to-put-an-emulator-in-a-window.md) (proposed: our own libretro frontend, gated on a frame-rate spike).
+[ADR 0001](docs/adr/0001-two-ways-to-put-an-emulator-in-a-window.md) (accepted: our own libretro frontend; spike 1 passed, see [docs/spike-1-frame-rate.md](docs/spike-1-frame-rate.md)).
 
 | piece | where it will live |
 |---|---|
