@@ -59,3 +59,7 @@ Sound goes to PipeWire/Pulse/ALSA/AudioQueue as in hibr's `media`; `HIBR_RETRO_A
   frame, so drawing it never holds up the core.
 - **Environment calls not handled are logged** at debug level (`hibr -d 3`) and refused; run a real core and
   add what it asks for. Hardware rendering is refused: software only.
+
+## Real cores
+
+`cores/build.sh WORKDIR OUTDIR` builds ScummVM and DOSBox Pure from the revisions in `cores/PINS`. Both load and run through `retro open`: ScummVM (v2026.4.0) detects a game directory and draws it, DOSBox Pure (1.0-preview7) runs at 70 fps. ScummVM needs `scummvm.zip` unpacked in the system directory (`-s`). `build/rl_shot` (`tests/rl_shot.c`) writes a core's latest frame as PPM.
