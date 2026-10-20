@@ -9,8 +9,8 @@
 #
 # Nothing registers a game: the shelf is scanned, so a box copied in, rsync'd
 # or untarred is on the shelf the next time it is refreshed, and a box taken
-# out is gone. The default shelf is $XDG_DATA_HOME/hibr/shelf; BX_SHELF
-# names another.
+# out is gone. The default shelf is ~/Dos Games, and Control Panel > Boxer
+# (or BX_SHELF) names another.
 #
 # A game with no cover.png gets a tile of its own, coloured from its name.
 
@@ -20,11 +20,26 @@ strict
 app boxer "DOS games on a shelf" 0.1
 # modules: img retro
 # part: apps/boxerplay.hibr
+# part: control-panel/boxerset.hibr
 command -v dt_app > /dev/null && dt_app boxer "Boxer" 40 100 "" "▣"
 command -v dt_keepstate > /dev/null && dt_keepstate boxer BX
 
 declare -gA BX BXJ
-BX_SHELF="${BX_SHELF-${XDG_DATA_HOME:-$HOME/.local/share}/hibr/shelf}"
+BX_TO=
+# The default shelf is a folder called Dos Games in the person's home -- unless
+# a shelf from before it was called that is there and the new one is not, in
+# which case that one is kept, so nothing goes missing. Control Panel > Boxer
+# changes it.
+fn bx_defshelf() {
+	local old="${XDG_DATA_HOME:-$HOME/.local/share}/hibr/shelf"
+
+	if [ ! -d "$HOME/Dos Games" ] && [ -d "$old" ]; then
+		ret "$old"
+	else
+		ret "$HOME/Dos Games"
+	fi
+}
+[ -n "${BX_SHELF-}" ] || { BX_SHELF := bx_defshelf; }
 command -v dt_keep > /dev/null && dt_keep BX_SHELF
 
 # The size of a tile: the cover is TH - 2 rows under a title row.
@@ -36,7 +51,7 @@ BX_TINT=(red green yellow blue magenta cyan)
 fn bx_scan(int id) {
 	local d t k n=0
 
-	for d in "$BX_SHELF"/*.boxer "$BX_SHELF"/*.gamebox; do
+	for d in "${BX[$id]["shelf"]:-$BX_SHELF}"/*.boxer "${BX[$id]["shelf"]:-$BX_SHELF}"/*.gamebox; do
 		[ -d "$d" ] || continue
 		t=${d##*/}
 		t=${t%.*}
@@ -104,7 +119,7 @@ fn bx_detect(dir, folder = "") {
 fn bx_unique(name) {
 	local n=$name k=2
 
-	while [ -e "$BX_SHELF/$n.boxer" ] || [ -e "$BX_SHELF/$n.boxer" ]; do
+	while [ -e "${BX_TO:-$BX_SHELF}/$n.boxer" ] || [ -e "${BX_TO:-$BX_SHELF}/$n.gamebox" ]; do
 		n="$name $k"
 		k=$((k + 1))
 	done
@@ -164,6 +179,34 @@ fn bx_dosname(dir, name) {
 		cand=${base:0:6}~$n${ext:+.${ext:0:3}}
 	done
 	ret "$cand"
+}
+
+# A game packaged for DOSBox often keeps its files in a folder that is the
+# drive itself -- C.harddisk, harddisk, drive_c -- to be mounted as C:. When
+# the box has exactly one such folder, its contents are the drive: moved up,
+# so the DOS path is C:\PRICEOF\ and not C:\C.HARDDISK\PRICEOF\.
+fn bx_hoist(root) {
+	local d n lo hit= k=0
+
+	for d in "$root"/*/; do
+		d=${d%/}
+		[ -d "$d" ] || continue
+		n=${d##*/}
+		lo=${n,,}
+		case $lo in
+		c | c.harddisk | harddisk | drive_c | drivec | c_drive | c-drive | cdrive) hit=$d; k=$((k + 1)) ;;
+		esac
+	done
+	[ "$k" = 1 ] || return 0
+	for d in "$hit"/* "$hit"/.[!.]*; do
+		[ -e "$d" ] || continue
+		[ -e "$root/${d##*/}" ] && return 0
+	done
+	for d in "$hit"/* "$hit"/.[!.]*; do
+		[ -e "$d" ] && command mv -- "$d" "$root/"
+	done
+	command rmdir "$hit" 2> /dev/null
+	return 0
 }
 
 # Rename what DOS cannot hold as it is, from the bottom up, so the DOS path
@@ -227,9 +270,10 @@ fn bx_import(src, title = "") {
 	base=${base##*/}
 	base=${base%.*}
 	name := bx_unique "${title:-$base}"
-	box="$BX_SHELF/$name.boxer"
+	box="${BX_TO:-$BX_SHELF}/$name.boxer"
 	mkdir -p "$box/engine" "$box/drives/c" "$box/saves" "$box/extras" || return 1
 	bx_fill "$src" "$box" || { command rm -rf -- "$box"; return 1; }
+	bx_hoist "$box/drives/c"
 	bx_dosify "$box/drives/c"
 	bx_describe "$box" "$base" "$name"
 	ret "$box"
@@ -245,14 +289,17 @@ fn bx_fix(box) {
 	t := bx_title "${box##*/}"
 	base=${box##*/}
 	base=${base%.*}
+	bx_hoist "$box/drives/c"
 	bx_dosify "$box/drives/c"
 	bx_describe "$box" "$base" "$t"
 	ret "$box"
 }
 
 fn boxer_open(int id, arg = "") {
-	[ -n "$arg" ] && [ -d "$arg" ] && BX_SHELF=$arg
-	mkdir -p "$BX_SHELF" 2> /dev/null
+	BX[$id]["shelf"]=
+	[ -n "$arg" ] && [ -d "$arg" ] && BX[$id]["shelf"]=$arg
+	BX[$id]["seen"]=${BX[$id]["shelf"]:-$BX_SHELF}
+	mkdir -p "${BX[$id]["seen"]}" 2> /dev/null
 	BX[$id]["sel"]=0
 	BX[$id]["top"]=0
 	bx_scan "$id"
@@ -305,14 +352,23 @@ fn bx_tile(int id, int i, int r, int c) {
 }
 
 fn boxer_draw(int id, int h, int w, int row, int col) {
-	local n=${BX[$id]["n"]:-0} cols rows top i r c
+	local n cols rows top i r c
+
+	if [ "${BX[$id]["seen"]-}" != "${BX[$id]["shelf"]:-$BX_SHELF}" ]; then
+		BX[$id]["seen"]=${BX[$id]["shelf"]:-$BX_SHELF}
+		BX[$id]["sel"]=0
+		BX[$id]["top"]=0
+		mkdir -p "${BX[$id]["seen"]}" 2> /dev/null
+		bx_scan "$id"
+	fi
+	n=${BX[$id]["n"]:-0}
 
 	console pen "$DT_INK" "$DT_FACE"
 	if [ "$n" -eq 0 ]; then
 		console pen "$DT_DIM" "$DT_FACE"
 		dt_tput "$id" 2 3 "No games on this shelf yet."
 		dt_tput "$id" 4 3 "A game is a folder named NAME.boxer in:"
-		dt_tput "$id" 5 5 "$BX_SHELF"
+		dt_tput "$id" 5 5 "${BX[$id]["shelf"]:-$BX_SHELF}"
 		dt_tput "$id" 7 3 "Drop a game's folder, a zip, or a CD image here to add it,"
 		dt_tput "$id" 8 3 "or choose File > Import a Game."
 		return 0
@@ -418,9 +474,13 @@ fn boxer_wheel(int id, dir, int r, int c) {
 fn bx_import_all(int id, ...paths) {
 	local p b n=0
 
+	BX_TO=${BX[$id]["shelf"]:-$BX_SHELF}
+	mkdir -p "$BX_TO" 2> /dev/null
+
 	for p in "${paths[@]}"; do
 		b := bx_import "$p" && n=$((n + 1))
 	done
+	BX_TO=
 	bx_scan "$id"
 	if [ "$n" -gt 0 ]; then
 		dt_notep low "Added $n to the shelf"

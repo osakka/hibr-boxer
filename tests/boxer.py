@@ -200,6 +200,8 @@ prog = [l for l in out.split("\n") if '"program"' in l]
 check("a game in folders DOS cannot hold as named is imported with names it can",
       prog and "PRINCE.EXE" in prog[0] and "C.harddisk" not in out.split("find")[-1] and "C~" not in prog[0],
       out + err)
+check("a folder that is the drive itself (C.harddisk) is hoisted: the program is at C:\\PRICEOF, not under it",
+      prog and r'C:\\PRICEOF\\PRINCE.EXE' in prog[0].upper(), prog)
 check("and the program's path, taken to the folders as renamed, is a real file",
       prog and os.path.exists(ish + "/Prince of Persia.boxer/drives/c/" + prog[0].split('"')[3].replace("C:\\\\", "").replace("\\\\", "/")),
       prog)
@@ -272,6 +274,53 @@ if dbp and os.path.exists(dbp):
         check("and the same box plays in the desktop's window through the real core",
               b"a=T" in t.raw and "Hello" in t.screen().text(), t.screen())
         t.close()
+
+# The default shelf: Dos Games in the home folder; an older shelf is kept in use when it is there and the new one is
+# not; the pane lists what is set and the dialog's Save makes the folder.
+home = os.path.join(D, "home")
+os.makedirs(home + "/.local/share/hibr/shelf")
+def withhome(*lines):
+    q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n%s" % (load("console"), DESK, ROOT, "\n".join(lines))],
+                       capture_output=True, text=True, env=dict(os.environ, HOME=home, XDG_DATA_HOME=home + "/.local/share",
+                                                               XDG_RUNTIME_DIR=D, BX_SHELF=""), timeout=60)
+    return q.stdout, q.stderr
+out, err = withhome("echo \"shelf=$BX_SHELF\"")
+check("an older shelf is kept in use while there is no Dos Games folder", "shelf=%s/.local/share/hibr/shelf" % home in out, out + err)
+os.makedirs(home + "/Dos Games")
+out, err = withhome("echo \"shelf=$BX_SHELF\"")
+check("the default shelf is Dos Games in the home folder once it is there", "shelf=%s/Dos Games" % home in out, out + err)
+q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\n"
+                    "declare -gA CP; boxerset_rows 40 > /dev/null\n"
+                    "for i in 0 1 2 3 4 5 6 7 8 9 10 11; do echo \"$i=${CP[40][$i][text]}|${CP[40][$i][val]}\"; done\n"
+                    "BX_SHELF=x; boxerset_do 40 mouse 1; echo \"mouse=$BX_MOUSE\"; boxerset_do 40 sound 1; echo \"sound=$BX_SOUND\""
+                    % (load("console"), DESK, ROOT, HIBR_TREE + "/programs/desktop", ROOT)],
+                   capture_output=True, text=True, env=dict(os.environ, HOME=home, XDG_RUNTIME_DIR=D, BX_SHELF=home + "/Dos Games"),
+                   timeout=60)
+out = q.stdout
+check("the pane lists the shelf folder, rendering, shape, full screen key, key hold, mouse and sound",
+      all(w in out for w in ("Folder", "Rendering", "Shape", "Full Screen Key", "Key Held", "Mouse", "Sound")), out + q.stderr)
+check("a row steps through its choices: mouse direct goes to relative, sound toggles",
+      "mouse=relative" in out and "sound=off" in out, out + q.stderr)
+
+# The folder dialog in a real desktop: the field is typed into and Save makes the folder and keeps it.
+target = os.path.join(D, "My Games")
+pth = sx.scratch("boxerdlg.hibr")
+open(pth, "w").write(
+    "%s. %s\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\nBX_SHELF=%s/old\n"
+    "dt_open\nbxs_dialog\ndt_run\ndt_close\necho \"SHELF=$BX_SHELF\" > %s/shelf.out\n"
+    % (load("console"), DESK, HIBR_TREE + "/programs/desktop", ROOT, D, D))
+t = Term(pth, rows=26, cols=82, settle=1.0, env=dict(ENVBASE, HOME=home))
+t.collect(0.8)
+check("the dialog shows the folder it keeps games in", "NAME.boxer" in t.screen().text() and "/old" in t.screen().text(),
+      t.screen())
+t.send(b"\x7f" * 80)
+t.send(target.encode())
+t.collect(0.4)
+t.send(b"\r")
+t.collect(0.8)
+t.quit()
+t.close()
+check("Save makes the folder", os.path.isdir(target), os.listdir(D))
 
 shutil.rmtree(D, True)
 report()
