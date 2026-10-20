@@ -369,8 +369,10 @@ detection and launch are tested without either installed.
 
 ## 9. Open questions
 
-1. **Route.** B, decided 2026-10-20. Cores are the real risk: build libretro's DOSBox and ScummVM cores
-   ourselves, or fetch libretro's builds?
+1. **Route.** B, decided 2026-10-20. Cores: **built by us from source** (decided 2026-10-20), not fetched
+   from libretro's builds, so we control what runs and can build per OS. Both
+   are GPL; they are separate objects loaded at run time, never linked into
+   hibr. Which core repos and revisions: to be chosen and pinned in `cores/`.
 2. **Platforms.** Linux and macOS both from the start? (Route B allows it.)
 3. **Names.** Application "Shelf", extension `.gamebox`, module `retro`? (The
    Games submenu in `hibr-apps` already holds snake, mines and bricks; Shelf
