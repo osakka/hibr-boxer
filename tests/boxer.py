@@ -132,5 +132,44 @@ for _ in range(20):
 check("Enter opens the selected game in a window of its own", t.screen().text().count("Beta Racer") >= 2, t.screen())
 t.close()
 
+
+# Import: a folder, a zip and a lone installer each become a box; the program named for its folder is the one
+# to launch, installers and tools sink, a lone installer marks the box, and the same name is not overwritten.
+src = os.path.join(D, "src", "Prince")
+os.makedirs(src + "/GAME")
+for f in ("GAME/PRINCE.EXE", "GAME/SETUP.EXE", "INSTALL.BAT", "GAME/README.COM"):
+    open(os.path.join(src, f), "w").write("x")
+subprocess.run(["zip", "-qr", os.path.join(D, "src", "Zipped.zip"), "Prince"], cwd=D + "/src", check=True)
+os.makedirs(D + "/src/inst")
+open(D + "/src/inst/SETUP.EXE", "w").write("x")
+ish = os.path.join(D, "ishelf")
+shutil.rmtree(ish, True)
+os.makedirs(ish)
+
+
+def imp(*a):
+    q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxer.hibr\nBX_SHELF=%s\n%s"
+                        % (load("console"), DESK, ROOT, ish, "\n".join(a))],
+                       capture_output=True, text=True, env=dict(os.environ, **ENVBASE), timeout=60)
+    return q.stdout, q.stderr
+
+
+out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"; cat \"$b/gamebox.json\"" % D)
+check("a folder is copied into drives/c of a new box on the shelf",
+      "box=%s/Prince.gamebox" % ish in out and os.path.exists(ish + "/Prince.gamebox/drives/c/GAME/PRINCE.EXE"), out + err)
+check("the program named for the folder is the one to launch",
+      r'C:\\GAME\\PRINCE.EXE' in out.split('"launch"')[1].split("}")[0], out + err)
+check("the others are listed, tools and installers last",
+      out.index("PRINCE.EXE") < out.index("SETUP.EXE") and '"installer"' not in out, out)
+out, err = imp("b := bx_import %s/src/Zipped.zip; echo \"box=$b\"" % D)
+check("a zip is unpacked into a box of its own", os.path.exists(ish + "/Zipped.gamebox/drives/c/Prince/GAME/PRINCE.EXE"), out + err)
+out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"" % D)
+check("importing the same name again makes another box", "box=%s/Prince 2.gamebox" % ish in out, out + err)
+out, err = imp("b := bx_import %s/src/inst/SETUP.EXE; cat \"$b/gamebox.json\"" % D)
+check("a lone installer is marked, and is what launches", '"installer": true' in out and "SETUP.EXE" in out, out + err)
+out, err = imp("bx_import_all 9 %s/src/Prince %s/src/nothing-here; echo \"n=${BX[9][n]}\"" % (D, D))
+check("a drop imports what it can, skips what it cannot, and the shelf is read again",
+      "n=4" in out or "n=5" in out, out + err)
+
 shutil.rmtree(D, True)
 report()
