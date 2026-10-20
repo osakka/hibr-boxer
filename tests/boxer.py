@@ -286,6 +286,29 @@ if dbp and os.path.exists(dbp):
         check("a click in the window reaches DOS: the program that waits for the left button prints its X",
               after > before, (before, after))
         t.close()
+        # Where DOS puts its pointer is where the click was, in a window that is neither at the corner of the screen
+        # nor the size it opened at: the cursor block lands within a cell or two of the press.
+        pb = gamebox("Pointer")
+        shutil.rmtree(pb + "/drives/c")
+        os.makedirs(pb + "/drives/c")
+        open(pb + "/drives/c/MOUSE.COM", "wb").write(
+            b"\xb8\x00\x00\xcd\x33\xb8\x01\x00\xcd\x33\xb4\x00\xcd\x16\xb8\x00\x4c\xcd\x21")
+        open(pb + "/gamebox.json", "w").write('{"gamebox":1,"title":"Pointer","launch":{"program":"C:\\\\MOUSE.COM"}}')
+        t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', pb, False, {"BP_CORE": dbp})
+        for _ in range(40):
+            t.collect(0.25)
+            if "▀" in t.screen().text():
+                break
+        t.collect(5.0)
+        cells = lambda sc: [(r, c) for r in range(5, 25) for c in range(10, 80)
+                            if any(v and v != "#000000" for v in (sc.style(r, c).get("fg"), sc.style(r, c).get("bg")))]
+        for (pr, pc) in ((14, 45), (10, 60), (20, 25)):
+            t.send(sx.press(pr, pc) + sx.release(pr, pc))
+            t.collect(1.5)
+            got = [x for x in cells(t.screen()) if not (x[0] <= 5 and x[1] <= 14)]
+            check("a click at row %d, column %d in an offset, resized window puts DOS's pointer there: %s" % (pr, pc, got[:2]),
+                  bool(got) and abs(got[0][0] - pr) <= 2 and abs(got[0][1] - pc) <= 2, got[:3])
+        t.close()
         t = desk("", hb_, True, {"BP_CORE": dbp})
         for _ in range(60):
             t.collect(0.25)
