@@ -91,5 +91,20 @@ for gfx, marker, want in (("kitty", b"\x1b_Ga=T,f=24", "pixels"), ("sixel", b"\x
     check(marker in o, "%s: the picture is sent as %r" % (gfx, marker[:12]))
     check("drawn=" + want in r, "%s: info says it drew %s (%s)" % (gfx, want, r.strip()))
     check(n >= 40, "%s: the wake descriptor drives the draws, %d in two seconds" % (gfx, n))
+
+# A modified key presses the modifier's own key too: shift-left is two keys down, not one, and so is a capital
+# letter or a shifted symbol -- a DOS game reads shift as a key of its own.
+def keys_down(name):
+    f = tempfile.mktemp()
+    rc, out, err = shell("need retro; id := retro open %s; retro hold $id 600; retro key $id %s; sleep 0.25; "
+                         "retro save $id %s; retro close $id" % (CORE, name, f))
+    d = open(f, "rb").read() if os.path.exists(f) else b""
+    return struct.unpack("<Q", d[8:16])[0] if len(d) >= 16 else -1
+
+
+check(keys_down("left") == 1, "a plain key is one key down: %d" % keys_down("left"))
+check(keys_down("shift-left") == 2, "shift-left is two: %d" % keys_down("shift-left"))
+check(keys_down("A") == 2, "a capital is two: %d" % keys_down("A"))
+check(keys_down("ctrl-left") == 2, "ctrl-left is two: %d" % keys_down("ctrl-left"))
 print("\n%d failed" % fails)
 sys.exit(1 if fails else 0)

@@ -19,7 +19,7 @@ ENVBASE = {"XDG_RUNTIME_DIR": D, "HIBR_RETRO_AUDIO": "none", "BP_CORE": CORE,
 
 def gamebox(name="Test Game"):
     """A gamebox folder: a program, a CD image, the person's own settings and a drive C."""
-    b = os.path.join(D, name + ".gamebox")
+    b = os.path.join(D, name + ".boxer")
     shutil.rmtree(b, True)
     os.makedirs(b + "/engine")
     os.makedirs(b + "/drives/c/GAME")
@@ -99,8 +99,8 @@ shutil.rmtree(shelf, True)
 os.makedirs(shelf)
 for nm in ("Alpha Quest", "Beta Racer", "Gamma Blast"):
     b = gamebox(nm)
-    shutil.move(b, os.path.join(shelf, nm + ".gamebox"))
-png(os.path.join(shelf, "Beta Racer.gamebox", "cover.png"), 60, 80, (200, 40, 40))
+    shutil.move(b, os.path.join(shelf, nm + ".boxer"))
+png(os.path.join(shelf, "Beta Racer.boxer", "cover.png"), 60, 80, (200, 40, 40))
 
 
 def shelfdesk(pix):
@@ -181,20 +181,31 @@ def imp(*a):
 
 out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"; cat \"$b/gamebox.json\"" % D)
 check("a folder is copied into drives/c of a new box on the shelf",
-      "box=%s/Prince.gamebox" % ish in out and os.path.exists(ish + "/Prince.gamebox/drives/c/GAME/PRINCE.EXE"), out + err)
+      "box=%s/Prince.boxer" % ish in out and os.path.exists(ish + "/Prince.boxer/drives/c/GAME/PRINCE.EXE"), out + err)
 check("the program named for the folder is the one to launch",
       r'C:\\GAME\\PRINCE.EXE' in out.split('"launch"')[1].split("}")[0], out + err)
 check("the others are listed, tools and installers last",
       out.index("PRINCE.EXE") < out.index("SETUP.EXE") and '"installer"' not in out, out)
 out, err = imp("b := bx_import %s/src/Zipped.zip; echo \"box=$b\"" % D)
-check("a zip is unpacked into a box of its own", os.path.exists(ish + "/Zipped.gamebox/drives/c/Prince/GAME/PRINCE.EXE"), out + err)
+check("a zip is unpacked into a box of its own", os.path.exists(ish + "/Zipped.boxer/drives/c/Prince/GAME/PRINCE.EXE"), out + err)
 out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"" % D)
-check("importing the same name again makes another box", "box=%s/Prince 2.gamebox" % ish in out, out + err)
+check("importing the same name again makes another box", "box=%s/Prince 2.boxer" % ish in out, out + err)
 out, err = imp("b := bx_import %s/src/inst/SETUP.EXE; cat \"$b/gamebox.json\"" % D)
 check("a lone installer is marked, and is what launches", '"installer": true' in out and "SETUP.EXE" in out, out + err)
+# A folder DOS cannot name as it is (a dot, a space, a long name) is renamed so the DOS path is the real one.
+os.makedirs(D + "/src/Prince of Persia/C.harddisk/priceof")
+open(D + "/src/Prince of Persia/C.harddisk/priceof/PRINCE.EXE", "w").write("x")
+out, err = imp("b := bx_import '%s/src/Prince of Persia'; echo \"box=$b\"; cat \"$b/gamebox.json\"; find \"$b/drives/c\"" % D)
+prog = [l for l in out.split("\n") if '"program"' in l]
+check("a game in folders DOS cannot hold as named is imported with names it can",
+      prog and "PRINCE.EXE" in prog[0] and "C.harddisk" not in out.split("find")[-1] and "C~" not in prog[0],
+      out + err)
+check("and the program's path, taken to the folders as renamed, is a real file",
+      prog and os.path.exists(ish + "/Prince of Persia.boxer/drives/c/" + prog[0].split('"')[3].replace("C:\\\\", "").replace("\\\\", "/")),
+      prog)
 out, err = imp("bx_import_all 9 %s/src/Prince %s/src/nothing-here; echo \"n=${BX[9][n]}\"" % (D, D))
 check("a drop imports what it can, skips what it cannot, and the shelf is read again",
-      "n=4" in out or "n=5" in out, out + err)
+      any(("n=%d" % k) in out for k in range(4, 9)), out + err)
 
 # The whole way, on the real core when DBP_CORE names one (cores/build.sh makes it): a folder holding a DOS
 # program is imported, its run.conf is given to DOSBox Pure, and the program's text is on the screen -- with the

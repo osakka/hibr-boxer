@@ -23,6 +23,7 @@ int tc_w = 320, tc_h = 200;
 unsigned long tc_n;
 unsigned tc_keyev, tc_keydown_evs, tc_keyup_evs;
 unsigned tc_shot;
+unsigned long tc_nkeys;
 double tc_phase;
 double tc_tone = 440;
 
@@ -192,6 +193,7 @@ void retro_run(void)
 		tc_tone = atof(v.value);
 	for (k = 0; k < 512; k++)
 		keys += tc_inp(0, RETRO_DEVICE_KEYBOARD, 0, (unsigned)k) ? 1 : 0;
+	tc_nkeys = (unsigned long)keys;
 	left = tc_inp(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_LEFT);
 	mx = tc_inp(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
 	my = tc_inp(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
@@ -229,20 +231,21 @@ void retro_run(void)
 
 size_t retro_serialize_size(void)
 {
-	return sizeof tc_n;
+	return sizeof tc_n + sizeof tc_nkeys;
 }
 
 bool retro_serialize(void *d, size_t n)
 {
-	if (n < sizeof tc_n)
+	if (n < sizeof tc_n + sizeof tc_nkeys)
 		return false;
 	memcpy(d, &tc_n, sizeof tc_n);
+	memcpy((char *)d + sizeof tc_n, &tc_nkeys, sizeof tc_nkeys);
 	return true;
 }
 
 bool retro_unserialize(const void *d, size_t n)
 {
-	if (n < sizeof tc_n)
+	if (n < sizeof tc_n + sizeof tc_nkeys)
 		return false;
 	memcpy(&tc_n, d, sizeof tc_n);
 	return true;

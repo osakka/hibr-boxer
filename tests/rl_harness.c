@@ -125,7 +125,7 @@ int main(int ac, char **av)
 	ck(rl_option(r, "testcore_tone", "880") == 0, "a core option can be set");
 	ck(rl_option(r, "no_such_option", "x") == -1, "an unknown one is refused");
 	sv = rl_save(r, &n);
-	ck(sv && n == sizeof(unsigned long), "state is saved");
+	ck(sv && n == 2 * sizeof(unsigned long), "state is saved");
 	nap(300);
 	ck(rl_load(r, sv, n) == 0, "and put back");
 	ck(tn && (long)(*tn - *(unsigned long *)sv) < 6, "the core is where it was");

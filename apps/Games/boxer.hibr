@@ -1,7 +1,7 @@
 #!/usr/bin/env hibr
 #
 # boxer -- a shelf of DOS games, one box to a game, in the way Boxer shelves
-# them on a Mac. A game lives in a folder of its own, NAME.gamebox, holding
+# them on a Mac. A game lives in a folder of its own, NAME.boxer, holding
 # the game's drive C, its box art (cover.png), the person's DOSBox settings
 # and the game's saves; the shelf is a folder of them, and this window shows
 # it as a grid of covers. Clicking one selects it, a double click or Enter
@@ -36,10 +36,10 @@ BX_TINT=(red green yellow blue magenta cyan)
 fn bx_scan(int id) {
 	local d t k n=0
 
-	for d in "$BX_SHELF"/*.gamebox; do
+	for d in "$BX_SHELF"/*.boxer "$BX_SHELF"/*.gamebox; do
 		[ -d "$d" ] || continue
 		t=${d##*/}
-		t=${t%.gamebox}
+		t=${t%.*}
 		if [ -r "$d/gamebox.json" ] &&
 		   json parse BXJ "$(< "$d/gamebox.json")" 2> /dev/null; then
 			t := bx_title "$t"
@@ -104,7 +104,7 @@ fn bx_detect(dir, folder = "") {
 fn bx_unique(name) {
 	local n=$name k=2
 
-	while [ -e "$BX_SHELF/$n.gamebox" ]; do
+	while [ -e "$BX_SHELF/$n.boxer" ] || [ -e "$BX_SHELF/$n.boxer" ]; do
 		n="$name $k"
 		k=$((k + 1))
 	done
@@ -139,21 +139,57 @@ fn bx_fill(src, box) {
 	return 0
 }
 
-# Make a gamebox on the shelf from src -- a folder, an archive, a CD image
-# or a lone program -- and say where it is. The best-guess program becomes
-# the one to launch, and the rest are listed in the box; a box with nothing
-# but an installer is marked so, and launches the installer.
-fn bx_import(src, title = "") {
-	local base name box progs prog sc i=0 line
+# Whether a name is one DOS can hold as it is: eight characters, a dot and
+# three, of the letters DOS allows.
+fn bx_is8(name) {
+	match "$name" '^[A-Za-z0-9_$~!#%&()@^{}`-]{1,8}(\.[A-Za-z0-9_$~!#%&()@^{}`-]{1,3})?$'
+}
 
-	[ -e "$src" ] || { echo "boxer: no such file or folder: $src" >&2; return 1; }
-	base=${src%/}
-	base=${base##*/}
-	base=${base%.*}
-	name := bx_unique "${title:-$base}"
-	box="$BX_SHELF/$name.gamebox"
-	mkdir -p "$box/engine" "$box/drives/c" "$box/saves" "$box/extras" || return 1
-	bx_fill "$src" "$box" || { command rm -rf -- "$box"; return 1; }
+# A name DOS can hold, made from one it cannot: the letters it allows, eight
+# of them and three after the last dot, and a ~N in place of the end of the
+# base when another name in the folder already has it.
+fn bx_dosname(dir, name) {
+	local base=$name ext= cand n=0 stem
+
+	case $name in
+	*.*) base=${name%.*}; ext=${name##*.} ;;
+	esac
+	base=${base//[^A-Za-z0-9_\$~!#%&()@^\{\}\`-]/}
+	ext=${ext//[^A-Za-z0-9_\$~!#%&()@^\{\}\`-]/}
+	[ -n "$base" ] || base=GAME
+	stem=${base:0:8}
+	cand=$stem${ext:+.${ext:0:3}}
+	while [ -n "$(find "$dir" -maxdepth 1 -iname "$cand" 2> /dev/null)" ]; do
+		n=$((n + 1))
+		cand=${base:0:6}~$n${ext:+.${ext:0:3}}
+	done
+	ret "$cand"
+}
+
+# Rename what DOS cannot hold as it is, from the bottom up, so the DOS path
+# to a program is the real one: a game's folder with a dot or a space in its
+# name was shown by DOSBox as C~1.HAR and the program was not found where its
+# own name said. A DOS program cannot ask for a longer name, so nothing it
+# uses is touched; what changes is the wrapper folders a modern download
+# arrives in.
+fn bx_dosify(root) {
+	local f d n new
+
+	find "$root" -depth -mindepth 1 2> /dev/null | while IFS= read -r f; do
+		d=${f%/*}
+		n=${f##*/}
+		bx_is8 "$n" && continue
+		new := bx_dosname "$d" "$n"
+		command mv -- "$f" "$d/$new"
+	done
+	return 0
+}
+
+# Write the box's gamebox.json from what is in its drives: the programs,
+# best guess first, which one launches, a CD image's mount.
+fn bx_describe(box, base, name) {
+	local progs sc line i=0
+
 	progs=$(bx_detect "$box/drives/c" "$base")
 	json parse BXJ '{"gamebox":1,"engine":"dosbox","launch":{},"programs":[],"mounts":[]}'
 	json set BXJ .title "$name" -s
@@ -176,6 +212,41 @@ fn bx_import(src, title = "") {
 	json set BXJ .display.aspect 4:3 -s
 	json set BXJ .source.imported "$(date +%F)" -s
 	json emit BXJ -p > "$box/gamebox.json"
+	return 0
+}
+
+# Make a gamebox on the shelf from src -- a folder, an archive, a CD image
+# or a lone program -- and say where it is. The best-guess program becomes
+# the one to launch, and the rest are listed in the box; a box with nothing
+# but an installer is marked so, and launches the installer.
+fn bx_import(src, title = "") {
+	local base name box
+
+	[ -e "$src" ] || { echo "boxer: no such file or folder: $src" >&2; return 1; }
+	base=${src%/}
+	base=${base##*/}
+	base=${base%.*}
+	name := bx_unique "${title:-$base}"
+	box="$BX_SHELF/$name.boxer"
+	mkdir -p "$box/engine" "$box/drives/c" "$box/saves" "$box/extras" || return 1
+	bx_fill "$src" "$box" || { command rm -rf -- "$box"; return 1; }
+	bx_dosify "$box/drives/c"
+	bx_describe "$box" "$base" "$name"
+	ret "$box"
+}
+
+# A box made before its names were made DOS-sized, or by hand: the same
+# treatment, its title kept.
+fn bx_fix(box) {
+	local t base
+
+	[ -r "$box/gamebox.json" ] || { echo "boxer: not a box: $box" >&2; return 1; }
+	json parse BXJ "$(< "$box/gamebox.json")" || return 1
+	t := bx_title "${box##*/}"
+	base=${box##*/}
+	base=${base%.*}
+	bx_dosify "$box/drives/c"
+	bx_describe "$box" "$base" "$t"
 	ret "$box"
 }
 
@@ -240,7 +311,7 @@ fn boxer_draw(int id, int h, int w, int row, int col) {
 	if [ "$n" -eq 0 ]; then
 		console pen "$DT_DIM" "$DT_FACE"
 		dt_tput "$id" 2 3 "No games on this shelf yet."
-		dt_tput "$id" 4 3 "A game is a folder named NAME.gamebox in:"
+		dt_tput "$id" 4 3 "A game is a folder named NAME.boxer in:"
 		dt_tput "$id" 5 5 "$BX_SHELF"
 		dt_tput "$id" 7 3 "Drop a game's folder, a zip, or a CD image here to add it,"
 		dt_tput "$id" 8 3 "or choose File > Import a Game."
@@ -398,8 +469,14 @@ if [ -z "${DT_ROWS-}" ]; then
 			b := bx_import "$p" && echo "$b"
 		done
 		;;
+	fix)
+		shift
+		for p in "$@"; do
+			b := bx_fix "$p" && echo "$b"
+		done
+		;;
 	list)
-		for b in "$BX_SHELF"/*.gamebox; do
+		for b in "$BX_SHELF"/*.boxer; do
 			[ -d "$b" ] && echo "$b"
 		done
 		;;

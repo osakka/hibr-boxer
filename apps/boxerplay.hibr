@@ -113,6 +113,7 @@ fn boxerplay_open(int id, arg = "") {
 		return 0
 	}
 	title := bp_get BPJ .title "${box##*/}"
+	title=${title%.boxer}
 	BP[$id]["name"]=${title%.gamebox}
 	dir="${XDG_RUNTIME_DIR:-/tmp}/hibr-boxer-$$-$id"
 	mkdir -p "$dir" "$box/saves" "$BP_SYS" 2> /dev/null

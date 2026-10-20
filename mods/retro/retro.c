@@ -565,12 +565,29 @@ int m_retro(sh *s, int ac, char **av)
 			lg(HIBR_LERR, "retro key: no such key: %s", ac > 3 ? av[3] : "");
 			return 2;
 		}
-		if (ac > 4 && !strcmp(av[4], "down"))
-			rl_key(p->r, code, chr, mods, 1);
-		else if (ac > 4 && !strcmp(av[4], "up"))
-			rl_key(p->r, code, chr, mods, 0);
-		else
-			rl_hold(p->r, code, chr, mods, p->hold);
+		{
+			static const struct {
+				unsigned mod, key;
+			} mk[] = { { RETROKMOD_SHIFT, RETROK_LSHIFT }, { RETROKMOD_CTRL, RETROK_LCTRL },
+				   { RETROKMOD_ALT, RETROK_LALT } };
+			int i, down = ac > 4 && !strcmp(av[4], "down"), up = ac > 4 && !strcmp(av[4], "up");
+
+			for (i = 0; i < 3; i++)
+				if (mods & mk[i].mod) {
+					if (up)
+						rl_key(p->r, mk[i].key, 0, mods, 0);
+					else if (down)
+						rl_key(p->r, mk[i].key, 0, mods, 1);
+					else
+						rl_hold(p->r, mk[i].key, 0, mods, p->hold);
+				}
+			if (down)
+				rl_key(p->r, code, chr, mods, 1);
+			else if (up)
+				rl_key(p->r, code, chr, mods, 0);
+			else
+				rl_hold(p->r, code, chr, mods, p->hold);
+		}
 		return HIBR_OK;
 	}
 	if (!strcmp(sub, "mouse")) {
