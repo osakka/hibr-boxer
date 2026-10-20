@@ -1,6 +1,6 @@
 HIBR ?= ../hibr
-CC ?= gcc
-CFLAGS ?= -O2 -g -Wall
+CC = tcc
+CFLAGS = -g -Wall
 INC = -Imods/retro -I$(HIBR)/include
 B = build
 

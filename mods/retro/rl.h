@@ -14,7 +14,7 @@ typedef struct rl rl;
 typedef struct rl_st rl_st;
 struct rl_st {
 	int w, h, paused, ended;
-	double fps, rate;
+	double fps, rate, aspect;
 	unsigned long frames, seq;
 	char *name, *ver, *err, *sound;
 };
@@ -30,7 +30,8 @@ void rl_close(rl *r);
 int rl_fd(rl *r);
 void rl_wake(rl *r);
 
-/* The latest frame as RGB triples, held still until rl_unlock; null while there is none yet. */
+/* The latest frame as RGB triples, a copy the caller keeps until its next rl_lock, so drawing it never holds up the
+   core; null while there is none yet. rl_unlock is kept for symmetry and does nothing. */
 const unsigned char *rl_lock(rl *r, int *w, int *h, unsigned long *seq);
 void rl_unlock(rl *r);
 

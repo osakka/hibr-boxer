@@ -239,9 +239,9 @@ int rt_keymap(const char *name, unsigned *code, uint32_t *chr, unsigned *mods)
 }
 
 /* The rectangle of cells a frame fills inside the rows and columns it was given, its shape kept. */
-void rt_fit(rt_pl *p, int w, int h, int cw, int ch, int *tw, int *th)
+void rt_fit(rt_pl *p, double core, int w, int h, int cw, int ch, int *tw, int *th)
 {
-	double a = p->aspect > 0 ? p->aspect : (h > 0 ? (double)w / h : 4.0 / 3);
+	double a = p->aspect > 0 ? p->aspect : core > 0 ? core : (h > 0 ? (double)w / h : 4.0 / 3);
 	double pw = (double)p->cols * cw, ph = (double)p->rows * ch, fw, fh;
 
 	if (pw / ph > a) {
@@ -297,6 +297,7 @@ int rt_draw(sh *s, rt_pl *p, int ac, char **av)
 	int row, col, drew = 0;
 	unsigned long seq;
 	const unsigned char *f;
+	rl_st st;
 
 	for (i = 3; i < ac; i++) {
 		if (!strcmp(av[i], "-p") && i + 1 < ac) {
@@ -328,12 +329,14 @@ int rt_draw(sh *s, rt_pl *p, int ac, char **av)
 	} else {
 		rt_dp->size(&ph, &pw);
 	}
+	rl_info(p->r, &st);
+	rl_stfree(&st);
 	f = rl_lock(p->r, &w, &h, &seq);
 	if (!f) {
 		rl_unlock(p->r);
 		return HIBR_FAIL;
 	}
-	rt_fit(p, w, h, cw > 1 && ch > 1 && p->mode == 0 ? cw : 1, cw > 1 && ch > 1 && p->mode == 0 ? ch : 2, &tw, &th);
+	rt_fit(p, st.aspect, w, h, cw > 1 && ch > 1 && p->mode == 0 ? cw : 1, cw > 1 && ch > 1 && p->mode == 0 ? ch : 2, &tw, &th);
 	row = v[0] + (p->rows - th) / 2;
 	col = v[1] + (p->cols - tw) / 2;
 	rt_dp->pen(DP_RGB, DP_RGB, 0);
@@ -346,7 +349,7 @@ int rt_draw(sh *s, rt_pl *p, int ac, char **av)
 		int hth = th;
 
 		if (p->mode == 0 && cw > 1 && ch > 1)
-			rt_fit(p, w, h, 1, 2, &tw, &hth);
+			rt_fit(p, st.aspect, w, h, 1, 2, &tw, &hth);
 		row = v[0] + (p->rows - hth) / 2;
 		col = v[1] + (p->cols - tw) / 2;
 		rt_half(rt_dp, f, w, h, row, col, hth, tw, prow, pcol, ph, pw);
@@ -376,6 +379,7 @@ int rt_info(sh *s, rt_pl *p)
 	rt_fieldn(s, "height", st.h);
 	rt_fieldn(s, "fps", st.fps);
 	rt_fieldn(s, "rate", st.rate);
+	rt_fieldn(s, "aspect", st.aspect);
 	rt_fieldn(s, "frames", (double)st.frames);
 	rt_field(s, "paused", st.paused ? "1" : "0");
 	rt_field(s, "ended", st.ended ? "1" : "0");

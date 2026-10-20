@@ -70,6 +70,14 @@ check(out.split() == ["2", "0", "0", "1"], "key names are checked, options too: 
 rc, out, err = shell("need retro; retro open /nonexistent.so; echo $?; retro open nosuchcore; echo $?")
 check(out.split() == ["1", "1"] and "no core named" in err, "a missing core is an error with a reason")
 
+rc, out, err = shell("need retro; a := retro open %s; retro open %s; echo $?; cp build/testcore.so build/testcore2.so; "
+                     "b := retro open build/testcore2.so; echo \"two=$a,$b\"; retro list; retro close all" % (CORE, CORE))
+check(out.split()[0] == "1" and "already running" in err and "two=1,2" in out, "the same core twice is refused, a copy is not: %r" % out)
+rc, out, err = shell("need retro; id := retro open %s; sleep 0.3; retro key $id left; i := retro info $id; "
+                     "echo \"aspect=${i[aspect]} core=${i[core]}\"; j := retro pause $id; k := retro info $id; "
+                     "echo \"stale=${k[nosuchkey]-absent}\"; retro close $id" % CORE)
+check("aspect=1.333" in out and "stale=absent" in out, "info reports the core's aspect and does not leave stale keys: %r" % out)
+
 loop = ("need console retro; console open || exit 1; id := retro open %s; fd := retro fd $id; console watch $fd; "
         "retro size $id 60 20; n=0; t=$EPOCHSECONDS; until [ $((EPOCHSECONDS - t)) -ge 2 ]; do "
         "k := console key 200; retro frame $id && { retro draw $id 1 1; console flush > /dev/null; n=$((n + 1)); }; done; "

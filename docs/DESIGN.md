@@ -104,9 +104,10 @@ Written down after building the driver (`mods/retro/rl.c`):
 - A core that crashes (a SIGSEGV in DOSBox) takes the whole desktop with it,
   every window, exactly as hibr's modules.md says of SIGPIPE.
 - A core is a process-wide singleton: its globals are shared by any second
-  copy of the same file. The driver keeps its own state thread-local, so two
-  *different* cores run side by side; that is why the module needs gcc (tcc
-  has no `__thread`).
+  copy of the same file, so `retro open` refuses a second open of one file
+  (a *copy* of the file is a separate core: verified, each has its own
+  globals). The driver keeps its own state per thread (POSIX keys, which tcc
+  has), so two different cores run side by side.
 - Escape hatch if either bites: run `rl` in a child process and send frames
   and PCM over a pipe, the shape `media feed` already has. `rl` was written
   with no shell or display dependency so that move is mechanical.
@@ -263,8 +264,9 @@ A hibr desktop app: a script with `app shelf "…" 1.0`, `# modules:` and
 - **Playing** opens the game in a window of its own, one per running game.
   The shelf stays. A second game can be started if it is a *different core*
   (DOSBox and ScummVM together); two games on the **same** core file share
-  that core's globals and cannot, unless the second is a copy of the file (not
-  yet verified) or the core runs in a child process (see below).
+  that core's globals and cannot: `retro open` refuses it. A *copy* of the core
+  file is a separate core (verified), so the Shelf can copy a core per running
+  game if it must, or the core can run in a child process (see below).
 - **Per-game panel** (Boxer's inspector): launch program, drives, display
   aspect and scaling, input behaviour, emulator speed, "open folder in Files",
   "eject disc".
@@ -374,7 +376,7 @@ installed"). So the OS package must be installed before the app, and the app's
 |---|---|
 | **0** | this repo: README, design, ADR, licence (done) |
 | **1** | the **frame-rate spike** (section 2 gate): done, passed for kitty and half blocks, see [spike-1](spike-1-frame-rate.md) |
-| **2** | `mods/retro`: libretro frontend (video, audio, input), loading a core, with a test core: **done** (driver, module, 30 + 12 checks, ASan/UBSan/TSan clean); next, the real cores built from source |
+| **2** | `mods/retro`: libretro frontend (video, audio, input), loading a core, with a test core: **done** (driver, module, 39 + 14 checks, tcc-built, ASan/UBSan/TSan clean); next, the real cores built from source |
 | **3** | the Shelf: gamebox format and library, shelf window with covers, import, launch through `retro`; a stub-core test suite |
 | **4** | prerequisites in `itdlabs/hibr`: key release, motion on focus (can start in parallel with 2) |
 | **5** | packages for deb, Homebrew and the AUR; publish `shelf` to `hibr-apps` |

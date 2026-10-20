@@ -91,12 +91,14 @@ struct rl {
 	int state, quit, paused, ended;
 	char *err, *name, *ver;
 	int fmt;
-	unsigned char *front, *back;
-	size_t fcap, bcap;
+	unsigned char *front, *back, *shown;
+	size_t fcap, bcap, scap;
+	unsigned long sseq;
+	int sw, sh;
 	int fw, fh;
 	unsigned long seq, frames;
 	int wake[2];
-	double fps, rate;
+	double fps, rate, aspect;
 	ra_ao ao;
 	int aoopen, aud;
 	char *sound;
@@ -109,6 +111,7 @@ struct rl {
 	rl_var *vars;
 	int nvars, vdirty;
 	char **popt;
+	char *live;
 	int op;
 	const char *oa, *ob;
 	const unsigned char *oin;
@@ -117,7 +120,45 @@ struct rl {
 	int ores, odone;
 };
 
-__thread rl *rl_cur;
+pthread_key_t rl_kcur;
+pthread_once_t rl_once = PTHREAD_ONCE_INIT;
+pthread_mutex_t rl_gmu = PTHREAD_MUTEX_INITIALIZER;
+char **rl_live;
+int rl_nlive;
+
+/* Make the key that tells a callback which player its thread belongs to. */
+void rl_mkkey(void)
+{
+	pthread_key_create(&rl_kcur, 0);
+}
+
+/* A flag shared between the core's thread and the caller's, read under the lock. */
+int rl_geti(rl *r, int *p)
+{
+	int v;
+
+	pthread_mutex_lock(&r->mu);
+	v = *p;
+	pthread_mutex_unlock(&r->mu);
+	return v;
+}
+
+/* Set a shared flag and wake whoever waits on it. */
+void rl_seti(rl *r, int *p, int v)
+{
+	pthread_mutex_lock(&r->mu);
+	*p = v;
+	pthread_cond_broadcast(&r->cv);
+	pthread_mutex_unlock(&r->mu);
+}
+
+/* One more frame run. */
+void rl_count(rl *r)
+{
+	pthread_mutex_lock(&r->mu);
+	r->frames++;
+	pthread_mutex_unlock(&r->mu);
+}
 
 /* A copy of a string, or null. */
 char *rl_dup(const char *s)
@@ -253,10 +294,18 @@ int rl_setvar(rl *r, const char *key, const char *val)
 	return 0;
 }
 
+/* The shape a core says its picture has: its own ratio, or else the base size's. */
+double rl_aspect(const struct retro_game_geometry *g)
+{
+	if (g->aspect_ratio > 0)
+		return g->aspect_ratio;
+	return g->base_height ? (double)g->base_width / g->base_height : 0;
+}
+
 /* The one place a core asks for what the frontend knows. */
 bool rl_env(unsigned cmd, void *data)
 {
-	rl *r = rl_cur;
+	rl *r = pthread_getspecific(rl_kcur);
 
 	if (!r)
 		return false;
@@ -277,7 +326,7 @@ bool rl_env(unsigned cmd, void *data)
 		*(unsigned *)data = 0;
 		return true;
 	case RETRO_ENVIRONMENT_SHUTDOWN:
-		__atomic_store_n(&r->quit, 1, __ATOMIC_SEQ_CST);
+		rl_seti(r, &r->quit, 1);
 		return true;
 	case RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL:
 	case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
@@ -353,12 +402,14 @@ bool rl_env(unsigned cmd, void *data)
 		*(bool *)data = true;
 		return true;
 	case RETRO_ENVIRONMENT_SET_GEOMETRY:
+		r->aspect = rl_aspect((const struct retro_game_geometry *)data);
 		return true;
 	case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: {
 		const struct retro_system_av_info *a = data;
 
 		r->fps = a->timing.fps;
 		r->rate = a->timing.sample_rate;
+		r->aspect = rl_aspect(&a->geometry);
 		return true;
 	}
 	case RETRO_ENVIRONMENT_SET_HW_RENDER:
@@ -410,7 +461,7 @@ void rl_conv(rl *r, const void *data, unsigned w, unsigned h, size_t pitch)
 /* The core has made a frame: convert it, make it the latest, and wake whoever waits. */
 void rl_video(const void *data, unsigned w, unsigned h, size_t pitch)
 {
-	rl *r = rl_cur;
+	rl *r = pthread_getspecific(rl_kcur);
 	unsigned char *t, b = 1;
 	size_t tc;
 
@@ -435,7 +486,7 @@ void rl_video(const void *data, unsigned w, unsigned h, size_t pitch)
 /* Sound from the core, a batch of stereo frames; the write is what paces the core. */
 size_t rl_abatch(const int16_t *d, size_t n)
 {
-	rl *r = rl_cur;
+	rl *r = pthread_getspecific(rl_kcur);
 
 	if (!r || !r->aoopen)
 		return n;
@@ -462,7 +513,7 @@ void rl_poll(void)
 /* What one input is doing now. */
 int16_t rl_input(unsigned port, unsigned dev, unsigned idx, unsigned id)
 {
-	rl *r = rl_cur;
+	rl *r = pthread_getspecific(rl_kcur);
 	int v = 0;
 
 	if (!r || port)
@@ -573,7 +624,7 @@ void rl_op(rl *r)
 	inn = r->oinn;
 	pthread_mutex_unlock(&r->mu);
 	if (op == 1) {
-		__atomic_store_n(&r->paused, a != 0, __ATOMIC_SEQ_CST);
+		rl_seti(r, &r->paused, a != 0);
 	} else if (op == 2) {
 		r->f.reset();
 	} else if (op == 3) {
@@ -662,7 +713,7 @@ void *rl_thread(void *arg)
 	char *why = 0;
 	double next;
 
-	rl_cur = r;
+	pthread_setspecific(rl_kcur, r);
 	r->dl = dlopen(r->core, RTLD_NOW | RTLD_LOCAL);
 	if (!r->dl) {
 		rl_fail(r, "%s", dlerror());
@@ -716,6 +767,7 @@ void *rl_thread(void *arg)
 	r->f.avinfo(&av);
 	r->fps = av.timing.fps > 1 ? av.timing.fps : 60;
 	r->rate = av.timing.sample_rate > 1000 ? av.timing.sample_rate : 44100;
+	r->aspect = rl_aspect(&av.geometry);
 	if (ra_audio(&r->ao, (int)(r->rate + 0.5), 2, &why) == HIBR_OK) {
 		r->aoopen = 1;
 		r->sound = rl_dup(r->ao.name ? r->ao.name : "none");
@@ -728,17 +780,17 @@ void *rl_thread(void *arg)
 	pthread_cond_broadcast(&r->cv);
 	pthread_mutex_unlock(&r->mu);
 	next = ra_now();
-	while (!__atomic_load_n(&r->quit, __ATOMIC_SEQ_CST)) {
+	while (!rl_geti(r, &r->quit)) {
 		rl_pump(r);
 		rl_op(r);
-		if (__atomic_load_n(&r->paused, __ATOMIC_SEQ_CST)) {
+		if (rl_geti(r, &r->paused)) {
 			usleep(5000);
 			next = ra_now();
 			continue;
 		}
 		r->aud = 0;
 		r->f.run();
-		__atomic_add_fetch(&r->frames, 1, __ATOMIC_RELAXED);
+		rl_count(r);
 		next += 1.0 / r->fps;
 		if (r->aud || ra_now() > next + 0.25)
 			next = ra_now();
@@ -760,17 +812,34 @@ out:
 	r->ended = 1;
 	pthread_cond_broadcast(&r->cv);
 	pthread_mutex_unlock(&r->mu);
-	rl_cur = 0;
+	pthread_setspecific(rl_kcur, 0);
 	return 0;
 }
 
 rl *rl_open(const char *core, const char *game, const char *sysdir, const char *savedir,
 	    const char *const *opts, char **err)
 {
-	rl *r = xm(sizeof *r);
-	int n = 0;
+	rl *r;
+	int n = 0, i;
+	char *rp = realpath(core, 0);
 
+	pthread_once(&rl_once, rl_mkkey);
+	if (!rp)
+		rp = xs(core);
+	pthread_mutex_lock(&rl_gmu);
+	for (i = 0; i < rl_nlive; i++)
+		if (!strcmp(rl_live[i], rp)) {
+			pthread_mutex_unlock(&rl_gmu);
+			*err = rl_dup("that core is already running; a core file runs once in a process");
+			free(rp);
+			return 0;
+		}
+	rl_live = xr(rl_live, sizeof *rl_live * (size_t)(rl_nlive + 1));
+	rl_live[rl_nlive++] = rp;
+	pthread_mutex_unlock(&rl_gmu);
+	r = xm(sizeof *r);
 	memset(r, 0, sizeof *r);
+	r->live = rp;
 	r->core = xs(core);
 	r->game = rl_dup(game);
 	r->sysdir = xs(sysdir ? sysdir : ".");
@@ -816,11 +885,19 @@ void rl_close(rl *r)
 
 	if (r->started) {
 		pthread_mutex_lock(&r->mu);
-		__atomic_store_n(&r->quit, 1, __ATOMIC_SEQ_CST);
+		r->quit = 1;
 		pthread_cond_broadcast(&r->cv);
 		pthread_mutex_unlock(&r->mu);
 		pthread_join(r->th, 0);
 	}
+	pthread_mutex_lock(&rl_gmu);
+	for (i = 0; i < rl_nlive; i++)
+		if (r->live && !strcmp(rl_live[i], r->live)) {
+			free(rl_live[i]);
+			rl_live[i] = rl_live[--rl_nlive];
+			break;
+		}
+	pthread_mutex_unlock(&rl_gmu);
 	for (i = 0; i < r->nvars; i++) {
 		free(r->vars[i].key);
 		free(r->vars[i].val);
@@ -835,6 +912,7 @@ void rl_close(rl *r)
 	free(r->vars);
 	free(r->popt);
 	free(r->front);
+	free(r->shown);
 	free(r->back);
 	free(r->keys);
 	free(r->ev);
@@ -870,15 +948,28 @@ void rl_wake(rl *r)
 const unsigned char *rl_lock(rl *r, int *w, int *h, unsigned long *seq)
 {
 	pthread_mutex_lock(&r->fmu);
-	*w = r->fw;
-	*h = r->fh;
-	*seq = r->seq;
-	return r->seq ? r->front : 0;
+	if (r->seq != r->sseq && r->seq) {
+		size_t n = (size_t)r->fw * r->fh * 3;
+
+		if (n > r->scap) {
+			r->shown = xr(r->shown, n);
+			r->scap = n;
+		}
+		memcpy(r->shown, r->front, n);
+		r->sseq = r->seq;
+		r->sw = r->fw;
+		r->sh = r->fh;
+	}
+	pthread_mutex_unlock(&r->fmu);
+	*w = r->sw;
+	*h = r->sh;
+	*seq = r->sseq;
+	return r->sseq ? r->shown : 0;
 }
 
 void rl_unlock(rl *r)
 {
-	pthread_mutex_unlock(&r->fmu);
+	(void)r;
 }
 
 void rl_info(rl *r, rl_st *st)
@@ -890,11 +981,12 @@ void rl_info(rl *r, rl_st *st)
 	st->seq = r->seq;
 	pthread_mutex_unlock(&r->fmu);
 	pthread_mutex_lock(&r->mu);
-	st->paused = __atomic_load_n(&r->paused, __ATOMIC_SEQ_CST);
+	st->paused = r->paused;
 	st->ended = r->ended;
 	st->fps = r->fps;
 	st->rate = r->rate;
-	st->frames = __atomic_load_n(&r->frames, __ATOMIC_RELAXED);
+	st->aspect = r->aspect;
+	st->frames = r->frames;
 	st->name = rl_dup(r->name);
 	st->ver = rl_dup(r->ver);
 	st->err = rl_dup(r->err);

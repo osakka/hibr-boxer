@@ -46,9 +46,16 @@ Sound goes to PipeWire/Pulse/ALSA/AudioQueue as in hibr's `media`; `HIBR_RETRO_A
 
 - **One thread makes every call into a core**, from `retro_set_environment` to `retro_deinit`, because many
   cores insist. The shell thread only posts messages and reads the latest frame.
-- **A core runs in the shell's process.** A crash in a core takes the desktop with it, and a core's own
-  globals mean two copies of the same core file in one process share them. Two *different* cores can run
-  together (the driver's callback state is thread-local); this is why the module is built with gcc, since tcc
-  has no `__thread`. The way out, if it matters, is the driver in a child process with frames over a pipe.
+- **A core runs in the shell's process.** A crash in a core takes the desktop with it. A core file runs
+  once in a process (a second `open` of the same file is refused, since its globals would be shared); a
+  *copy* of the file is a separate core, and two different cores run together, the driver's callback state
+  being per thread. The way out, if any of this bites, is the driver in a child process with frames over a pipe.
+- **`hold` must be longer than the terminal's key-repeat delay to hold a key**, and shorter than a tap should
+  last. A terminal reports a press and, after its initial delay (commonly 250-500 ms), repeats; with no release
+  event (hibr #315) the default 120 ms makes a held key press, let go, then press again when repeats start.
+  120 is chosen because a stuck key in a text field is worse than a stutter in a walk. It is a per-game
+  setting; only #315 fixes it.
+- **Built with tcc**, as hibr is (`make`; `make CC=gcc` for sanitizers). `rl_lock` hands back a copy of the
+  frame, so drawing it never holds up the core.
 - **Environment calls not handled are logged** at debug level (`hibr -d 3`) and refused; run a real core and
   add what it asks for. Hardware rendering is refused: software only.

@@ -146,9 +146,44 @@ int main(int ac, char **av)
 	ck(st.frames > s2, "frames again after");
 	rl_stfree(&st);
 	ck(rl_reset(r) == 0, "reset");
+	rl_info(r, &st);
+	ck(fabs(st.aspect - 4.0 / 3) < 0.01, "the core's own aspect ratio is kept");
+	rl_stfree(&st);
 	f = rl_lock(r, &w, &h, &seq);
-	(void)f;
+	rl_info(r, &st);
+	s1 = st.frames;
+	rl_stfree(&st);
+	nap(250);
+	rl_info(r, &st);
+	ck(f && st.frames - s1 >= 8, "holding a frame to draw it does not stall the core");
+	printf("      frames during a 250 ms hold: %lu\n", st.frames - s1);
+	rl_stfree(&st);
 	rl_unlock(r);
+	{
+		rl *r2;
+		void *d2;
+		unsigned long *tn2, a1, a2;
+
+		r2 = rl_open(core, 0, 0, 0, 0, &err);
+		ck(!r2 && err && strstr(err, "already running"), "the same core file is refused twice");
+		free(err);
+		err = 0;
+		ck(system("cp build/testcore.so build/testcore2.so") == 0, "a copy of the core file");
+		r2 = rl_open("build/testcore2.so", 0, 0, 0, 0, &err);
+		ck(r2 != 0, "is a core of its own and opens beside the first");
+		if (r2) {
+			d2 = dlopen("build/testcore2.so", RTLD_NOW | RTLD_NOLOAD);
+			tn2 = d2 ? dlsym(d2, "tc_n") : 0;
+			ck(tn2 && tn2 != tn, "with globals of its own");
+			a1 = tn2 ? *tn2 : 0;
+			nap(300);
+			a2 = tn2 ? *tn2 : 0;
+			ck(a2 - a1 >= 10, "and both run at once");
+			ck(rl_reset(r2) == 0 && tn2 && *tn2 < a2 && *tn > 30, "resetting one leaves the other alone");
+			rl_close(r2);
+			ck(1, "the second closes and the first goes on");
+		}
+	}
 	rl_close(r);
 	ck(1, "closed with no crash");
 	r = rl_open("/nonexistent/core.so", 0, 0, 0, 0, &err);
