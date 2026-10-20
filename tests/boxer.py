@@ -158,6 +158,27 @@ check("a second press on the same tile plays that game in a window of its own",
       "Boxer Game" in t.screen().text(), t.screen())
 t.close()
 
+# The Info drawer: `i` opens it with the selected game's settings; Tab goes into it, Down and Right change a
+# field, and the choice is written into the box's own gamebox.json.
+t = shelfdesk(False)
+t.collect(1.5)
+t.send(b"i")
+t.collect(0.8)
+sc = t.screen()
+check("i opens the Info drawer for the selected game", "Rendering" in sc.text() and "Settings for this game" in sc.text(), sc)
+t.send(b"\t")
+t.send(b"\x1b[B")
+t.send(b"\x1b[C")
+t.collect(0.8)
+doc = open(os.path.join(shelf, "Alpha Quest.boxer", "gamebox.json")).read()
+check("a field changed with the keys is written into that box", '"render": "follow"' in doc, doc)
+t.send(b"\x1b[B\x1b[B\x1b[C")
+t.collect(0.6)
+doc = open(os.path.join(shelf, "Alpha Quest.boxer", "gamebox.json")).read()
+check("and the next one down too (Speed)", '"cycles": "auto"' in doc, doc)
+t.close()
+
+
 # Import: a folder, a zip and a lone installer each become a box; the program named for its folder is the one
 # to launch, installers and tools sink, a lone installer marks the box, and the same name is not overwritten.
 src = os.path.join(D, "src", "Prince")
@@ -321,6 +342,15 @@ t.collect(0.8)
 t.quit()
 t.close()
 check("Save makes the folder", os.path.isdir(target), os.listdir(D))
+
+# What the drawer wrote is what DOSBox is told: sections after the person's own, so they win.
+out, err = imp(". %s/apps/boxerplay.hibr" % ROOT,
+               "b='%s/Alpha Quest.boxer'; json parse BPJ \"$(< \"$b/gamebox.json\")\"; mkdir -p %s/tune; "
+               "json set BPJ .machine vgaonly -s; json set BPJ .sound.card none -s; json set BPJ .cpu.cycles 8000 -s; "
+               "f := bp_conf \"$b\" %s/tune; cat \"$f\"" % (shelf, D, D))
+check("a game's speed, graphics and sound are written into the conf after the person's own",
+      "[cpu]\ncycles=8000" in out and "[dosbox]\nmachine=vgaonly" in out and "[sblaster]\nsbtype=none" in out
+      and out.index("cycles=max") < out.index("cycles=8000"), out + err)
 
 shutil.rmtree(D, True)
 report()

@@ -15,6 +15,8 @@ DBP_CORE=OUT/dosbox_pure_libretro.so make check-boxer   # the apps, and the whol
 boxer.hibr import ~/Games/prince       # from a shell: a folder, zip, .iso/.cue or program
 ```
 
+Settings: Control Panel > Boxer is for every game (the shelf folder, which defaults to `~/Dos Games`; rendering, shape, full screen key, key hold, mouse, sound). A game's own go in the shelf's Info drawer (`i`), Boxer's own way: program, rendering, shape, speed, graphics, sound card, mouse, written into the box's `gamebox.json`, where `default` means the Control Panel's. The folder for a game is `NAME.boxer`; an older `NAME.gamebox` still shows.
+
 How a game is run: `gamebox.json` names the program and the CD images, `engine/dosbox.conf` is the person's own settings; at launch they become one `run.conf` (settings first, then an `[autoexec]` that mounts `drives/c` as C: and starts the program) that DOSBox Pure is given as its content. The game's own saves go to `drives/c`, as on a real disk.
 
 | piece | where it will live |
