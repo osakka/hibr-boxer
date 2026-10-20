@@ -165,7 +165,7 @@ int main(int ac, char **av)
 		unsigned long *tn2, a1, a2;
 
 		r2 = rl_open(core, 0, 0, 0, 0, &err);
-		ck(!r2 && err && strstr(err, "already run"), "the same core file is refused twice");
+		ck(!r2 && err && strstr(err, "already running"), "the same core file is refused twice");
 		free(err);
 		err = 0;
 		ck(system("cp build/testcore.so build/testcore2.so") == 0, "a copy of the core file");
@@ -186,6 +186,17 @@ int main(int ac, char **av)
 	}
 	rl_close(r);
 	ck(1, "closed with no crash");
+	r = rl_open(core, 0, 0, 0, 0, &err);
+	ck(r != 0, "the same core file opens again once closed, as a fresh copy");
+	nap(300);
+	if (r) {
+		rl_info(r, &st);
+		ck(st.frames > 5 && st.frames < 60, "and runs from the start with globals of its own");
+		rl_stfree(&st);
+		rl_close(r);
+	}
+	free(err);
+	err = 0;
 	r = rl_open("/nonexistent/core.so", 0, 0, 0, 0, &err);
 	ck(!r && err, "a missing core is refused with a reason");
 	printf("      %s\n", err ? err : "");

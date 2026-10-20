@@ -47,7 +47,7 @@ Sound goes to PipeWire/Pulse/ALSA/AudioQueue as in hibr's `media`; `HIBR_RETRO_A
 - **One thread makes every call into a core**, from `retro_set_environment` to `retro_deinit`, because many
   cores insist. The shell thread only posts messages and reads the latest frame.
 - **A core runs in the shell's process.** A crash in a core takes the desktop with it. A core file runs
-  once in a process, even after `close` (a second `open` of the same file is refused: DOSBox Pure segfaults when loaded a second time, ScummVM does not, but the driver cannot tell which); a
+  once at a time in a process (a second `open` of a file that is running is refused, since its globals would be shared); a file that has run before is loaded again as an unlinked temporary copy, because DOSBox Pure crashes when the same image is loaded twice and `dlclose` does not make it unload; a
   *copy* of the file is a separate core, and two different cores run together, the driver's callback state
   being per thread. The way out, if any of this bites, is the driver in a child process with frames over a pipe.
 - **`hold` must be longer than the terminal's key-repeat delay to hold a key**, and shorter than a tap should
@@ -63,3 +63,5 @@ Sound goes to PipeWire/Pulse/ALSA/AudioQueue as in hibr's `media`; `HIBR_RETRO_A
 ## Real cores
 
 `cores/build.sh WORKDIR OUTDIR` builds ScummVM and DOSBox Pure from the revisions in `cores/PINS`. Both load and run through `retro open`: ScummVM (v2026.4.0) detects a game directory and draws it, DOSBox Pure (1.0-preview7) runs at 70 fps. ScummVM needs `scummvm.zip` unpacked in the system directory (`-s`). `build/rl_shot` (`tests/rl_shot.c`) writes a core's latest frame as PPM.
+
+Checked on the real cores: DOSBox Pure saves and loads a state while a DOS program runs (152 kB), and says so when none runs; ScummVM has no state to give.

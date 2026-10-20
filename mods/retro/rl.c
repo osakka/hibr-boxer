@@ -112,6 +112,7 @@ struct rl {
 	int nvars, vdirty;
 	char **popt;
 	char *live;
+	int fresh;
 	int op;
 	const char *oa, *ob;
 	const unsigned char *oin;
@@ -124,7 +125,41 @@ pthread_key_t rl_kcur;
 pthread_once_t rl_once = PTHREAD_ONCE_INIT;
 pthread_mutex_t rl_gmu = PTHREAD_MUTEX_INITIALIZER;
 char **rl_live;
+int *rl_run;
 int rl_nlive;
+
+/* Load a core file again as a copy of its own: a core that has run before cannot be trusted to unload, and
+   DOSBox Pure crashes when its image is loaded a second time. The copy is unlinked once it is mapped. */
+void *rl_dlcopy(const char *path)
+{
+	const char *t = getenv("TMPDIR");
+	char *tmp = xs(t && *t ? t : "/tmp");
+	char *nm = xm(strlen(tmp) + 24);
+	size_t bn = 1 << 16;
+	char *buf = xm(bn);
+	void *h = 0;
+	int in, out;
+	ssize_t n;
+
+	sprintf(nm, "%s/hibr-retro-XXXXXX", tmp);
+	in = open(path, O_RDONLY);
+	out = in < 0 ? -1 : mkstemp(nm);
+	if (out >= 0) {
+		while ((n = read(in, buf, bn)) > 0)
+			if (write(out, buf, (size_t)n) != n)
+				break;
+		close(out);
+		if (n == 0)
+			h = dlopen(nm, RTLD_NOW | RTLD_LOCAL);
+		unlink(nm);
+	}
+	if (in >= 0)
+		close(in);
+	free(buf);
+	free(nm);
+	free(tmp);
+	return h;
+}
 
 /* Make the key that tells a callback which player its thread belongs to. */
 void rl_mkkey(void)
@@ -714,7 +749,7 @@ void *rl_thread(void *arg)
 	double next;
 
 	pthread_setspecific(rl_kcur, r);
-	r->dl = dlopen(r->core, RTLD_NOW | RTLD_LOCAL);
+	r->dl = r->fresh ? rl_dlcopy(r->core) : dlopen(r->core, RTLD_NOW | RTLD_LOCAL);
 	if (!r->dl) {
 		rl_fail(r, "%s", dlerror());
 		goto out;
@@ -820,7 +855,7 @@ rl *rl_open(const char *core, const char *game, const char *sysdir, const char *
 	    const char *const *opts, char **err)
 {
 	rl *r;
-	int n = 0, i;
+	int n = 0, i, again;
 	char *rp = realpath(core, 0);
 
 	pthread_once(&rl_once, rl_mkkey);
@@ -828,18 +863,30 @@ rl *rl_open(const char *core, const char *game, const char *sysdir, const char *
 		rp = xs(core);
 	pthread_mutex_lock(&rl_gmu);
 	for (i = 0; i < rl_nlive; i++)
-		if (!strcmp(rl_live[i], rp)) {
-			pthread_mutex_unlock(&rl_gmu);
-			*err = rl_dup("that core has already run in this process; a core file runs once, since DOSBox Pure crashes when loaded again");
-			free(rp);
-			return 0;
-		}
-	rl_live = xr(rl_live, sizeof *rl_live * (size_t)(rl_nlive + 1));
-	rl_live[rl_nlive++] = rp;
+		if (!strcmp(rl_live[i], rp))
+			break;
+	again = i < rl_nlive;
+	if (again && rl_run[i]) {
+		pthread_mutex_unlock(&rl_gmu);
+		*err = rl_dup("that core is already running; a core file runs once at a time in a process");
+		free(rp);
+		return 0;
+	}
+	if (again) {
+		free(rp);
+		rp = rl_live[i];
+	} else {
+		rl_live = xr(rl_live, sizeof *rl_live * (size_t)(rl_nlive + 1));
+		rl_run = xr(rl_run, sizeof *rl_run * (size_t)(rl_nlive + 1));
+		rl_live[rl_nlive] = rp;
+		rl_nlive++;
+	}
+	rl_run[i] = 1;
 	pthread_mutex_unlock(&rl_gmu);
 	r = xm(sizeof *r);
 	memset(r, 0, sizeof *r);
 	r->live = rp;
+	r->fresh = again;
 	r->core = xs(core);
 	r->game = rl_dup(game);
 	r->sysdir = xs(sysdir ? sysdir : ".");
@@ -890,6 +937,11 @@ void rl_close(rl *r)
 		pthread_mutex_unlock(&r->mu);
 		pthread_join(r->th, 0);
 	}
+	pthread_mutex_lock(&rl_gmu);
+	for (i = 0; i < rl_nlive; i++)
+		if (rl_live[i] == r->live)
+			rl_run[i] = 0;
+	pthread_mutex_unlock(&rl_gmu);
 	for (i = 0; i < r->nvars; i++) {
 		free(r->vars[i].key);
 		free(r->vars[i].val);
