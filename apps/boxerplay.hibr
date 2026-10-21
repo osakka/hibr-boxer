@@ -541,28 +541,13 @@ fn bp_conf(box, dir) {
 	ret "$f"
 }
 
-fn boxerplay_open(int id, arg = "") {
-	local box=$arg dir conf title mm midi
+# Start the game: its run.conf made, and the core given it.
+fn bp_start(int id) {
+	local box=${BP[$id]["box"]} dir conf mm midi
 	local -A snd
 
-	BP[$id]["err"]=
-	BP[$id]["box"]=$box
-	bm_up "$box"
-	if [ ! -r "$box/boxer.json" ]; then
-		BP[$id]["err"]="Not a Boxer game: $box"
-		return 0
-	fi
-	need retro 2> /dev/null || {
-		BP[$id]["err"]="The retro module is not installed"
-		return 0
-	}
-	json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null || {
-		BP[$id]["err"]="boxer.json is not valid"
-		return 0
-	}
-	title := bp_get BPJ .title "${box##*/}"
-	title=${title%.boxer}
-	BP[$id]["name"]=${title%.gamebox}
+	BP[$id]["choose"]=
+	json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null || return 0
 	dir="${XDG_RUNTIME_DIR:-/tmp}/hibr-boxer-$$-$id"
 	mkdir -p "$dir" "$box/saves" "$BP_SYS" 2> /dev/null
 	conf := bp_conf "$box" "$dir"
@@ -596,12 +581,116 @@ fn boxerplay_open(int id, arg = "") {
 	dt_retitle "$id" "${BP[$id]["name"]}"
 }
 
+
+# Which program to run, asked of the game that has several and none chosen: the
+# choice is written into the game, which then starts.
+fn bp_chose(int id, v) {
+	local box=${BP[$id]["box"]}
+
+	json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null || return 0
+	json set BPJ .launch.program "$v" -s
+	json set BPJ .installer false
+	json emit BPJ -p > "$box/boxer.json"
+	bp_start "$id"
+	return 0
+}
+
+fn bp_choosedraw(int id, int h, int w) {
+	local -a o
+	local i r
+
+	read -ra o <<< "${BP[$id]["progs"]}"
+	dt_wclear "$id"
+	console pen "$DT_INK" "$DT_FACE"
+	console fill -p "w$id" 1 1 $((h - 2)) $((w - 2)) " "
+	console pen "$DT_INK" "$DT_FACE" bold
+	dt_tput "$id" 2 3 "Which program should ${BP[$id]["name"]:0:$((w - 30))} run?"
+	for i in "${!o[@]}"; do
+		r=$((4 + i))
+		[ "$r" -lt $((h - 3)) ] || break
+		if [ "$i" = "${BP[$id]["choose"]}" ]; then console pen "$DT_SELINK" "$DT_ACTIVE"; else console pen "$DT_INK" "$DT_FACE"; fi
+		console fill -p "w$id" "$r" 3 1 $((w - 6)) " "
+		dt_tput "$id" "$r" 4 "${o[$i]}"
+		dt_wreg "$id" "$r" 3 $((w - 6)) "p$i"
+	done
+	console pen "$DT_DIM" "$DT_FACE"
+	dt_tput "$id" $((h - 2)) 3 "Up, down and enter; the choice is remembered. Settings can change it."
+	return 0
+}
+
+fn bp_choosekey(int id, key) {
+	local -a o
+	local n
+
+	read -ra o <<< "${BP[$id]["progs"]}"
+	n=${#o[@]}
+	case $key in
+	up) BP[$id]["choose"]=$(((BP[$id]["choose"] + n - 1) % n)) ;;
+	down) BP[$id]["choose"]=$(((BP[$id]["choose"] + 1) % n)) ;;
+	enter) bp_chose "$id" "${o[${BP[$id]["choose"]}]}" ;;
+	escape) dt_del "$id" ;;
+	esac
+	return 0
+}
+
+fn bp_chooseclick(int id, int r, int c) {
+	local -a o
+	local tag
+
+	tag := dt_hit "$id" "$r" "$c" || return 0
+	read -ra o <<< "${BP[$id]["progs"]}"
+	case $tag in p[0-9]*) bp_chose "$id" "${o[${tag#p}]}" ;; esac
+	return 0
+}
+
+fn boxerplay_open(int id, arg = "") {
+	local box=$arg title prog n i v
+
+	BP[$id]["err"]=
+	BP[$id]["box"]=$box
+	bm_up "$box"
+	if [ ! -r "$box/boxer.json" ]; then
+		BP[$id]["err"]="Not a Boxer game: $box"
+		return 0
+	fi
+	need retro 2> /dev/null || {
+		BP[$id]["err"]="The retro module is not installed"
+		return 0
+	}
+	json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null || {
+		BP[$id]["err"]="boxer.json is not valid"
+		return 0
+	}
+	title := bp_get BPJ .title "${box##*/}"
+	title=${title%.boxer}
+	BP[$id]["name"]=${title%.gamebox}
+	BP[$id]["progs"]=
+	prog := bp_get BPJ .launch.program
+	if [ -z "$prog" ]; then
+		n := json len BPJ .programs 2> /dev/null || n=0
+		for ((i = 0; i < n; i++)); do
+			v := json get BPJ ".programs[$i]" 2> /dev/null || continue
+			BP[$id]["progs"]="${BP[$id]["progs"]}${BP[$id]["progs"]:+ }$v"
+		done
+		if [ -n "${BP[$id]["progs"]}" ]; then
+			BP[$id]["choose"]=0
+			dt_retitle "$id" "${BP[$id]["name"]}"
+			return 0
+		fi
+	fi
+	bp_start "$id"
+}
+
 # What a cell is in pixels, for placing the picture: the terminal's own when
 # pixels are drawn, 1 by 2 for half blocks. Not needed by the module, which
 # keeps the picture's shape itself; the cells it is given are the window's.
 fn boxerplay_draw(int id, int h, int w, int row, int col) {
 	local p=${BP[$id]["p"]} m
 
+	if [ -n "${BP[$id]["choose"]-}" ]; then
+		bp_choosedraw "$id" "$h" "$w"
+		return 0
+	fi
 	console pen "$DT_INK" "$DT_FACE"
 	if [ -n "${BP[$id]["err"]}" ]; then
 		dt_tput "$id" 2 2 "${BP[$id]["err"]}"
@@ -649,6 +738,10 @@ fn boxerplay_idle(int id) {
 fn boxerplay_key(int id, key) {
 	local p=${BP[$id]["p"]}
 
+	if [ -n "${BP[$id]["choose"]-}" ]; then
+		bp_choosekey "$id" "$key"
+		return 0
+	fi
 	[ -n "$p" ] || return 1
 	if [ "$key" = "$BX_FULLKEY" ]; then
 		dt_zoom "$id"
@@ -678,6 +771,7 @@ fn boxerplay_mouse(int id, act, btn, int r, int c, mods = "") {
 }
 
 fn boxerplay_click(int id, int r, int c, btn = "") {
+	[ -n "${BP[$id]["choose"]-}" ] && bp_chooseclick "$id" "$r" "$c"
 	return 0
 }
 

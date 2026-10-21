@@ -1,32 +1,36 @@
 #!/usr/bin/env hibr
 #
-# boxer -- a shelf of DOS games, one box to a game, in the way Boxer shelves
-# them on a Mac. A game lives in a folder of its own, NAME.boxer, holding
-# the game's drive C, its box art (.cover.png), the person's DOSBox settings
-# and the game's saves; the shelf is a folder of them, and this window shows
-# it as a grid of covers. Clicking one selects it, a double click or Enter
-# plays it, in a window of its own (boxerplay).
+# boxer -- DOS games, one folder to a game, in the way Boxer keeps them on a
+# Mac. A game lives in a folder of its own, NAME.boxer, holding the game's
+# drive C, its box art (.cover.png), the person's DOSBox settings and the
+# game's saves. The games folder is ~/Dos Games, and Control Panel > Boxer (or
+# BX_SHELF) names another. Files shows the folders, and a double click on one
+# plays it, in a window of its own (boxerplay); a right click offers Get Info,
+# where the program, sound card, MIDI, graphics and the game's name are set.
 #
-# Nothing registers a game: the shelf is scanned, so a box copied in, rsync'd
-# or untarred is on the shelf the next time it is refreshed, and a box taken
-# out is gone. The default shelf is ~/Dos Games, and Control Panel > Boxer
-# (or BX_SHELF) names another.
+# This window is for getting a game in. Drop a folder, a zip, a disc image or a
+# program on it, or choose one with Import, and it is made into a NAME.boxer the
+# way Boxer does it: an installer is run first, from the game's disc as D:.
 #
-# A game with no cover gets a tile of its own, coloured from its name.
+# A tribute to Boxer, by Alun Bestor (https://boxerapp.com).
 
 strict
 
 
-app boxer "DOS games on a shelf" 0.9
+app boxer "DOS games, one folder to a game" 1.0
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
-command -v dt_app > /dev/null && dt_app boxer "Boxer" 40 100 "" "▣"
+command -v dt_app > /dev/null && dt_app boxer "Boxer" 21 72 "" "▣" fixed
 command -v dt_app > /dev/null && dt_app boxerabout "About Boxer" 17 78 "" "" fixed hidden
+command -v dt_app > /dev/null && dt_app boxercover "Fetch Cover" 10 66 "" "" fixed hidden
+command -v dt_app > /dev/null && dt_app boxerdone "Game Is Already Installed" 10 66 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxerinfo "Game Settings" 17 60 "" "" fixed hidden
 command -v dt_keepstate > /dev/null && dt_keepstate boxer BX
 command -v dt_opener > /dev/null && dt_opener boxerplay "Boxer" "boxer" app boxerplay dir
 command -v dt_openerverb > /dev/null && dt_openerverb boxer "Get Info..." boxerinfo
+command -v dt_openerverb > /dev/null && dt_openerverb boxer "Fetch Cover..." boxercover
+command -v dt_openerverb > /dev/null && dt_openerverb boxer "Game Is Already Installed..." boxerdone
 
 declare -gA BX BXJ
 BX_TO=
@@ -46,42 +50,6 @@ fn bx_defshelf() {
 [ -n "${BX_SHELF-}" ] || { BX_SHELF := bx_defshelf; }
 command -v dt_keep > /dev/null && dt_keep BX_SHELF
 
-# The size of a tile: the cover is TH - 2 rows under a title row.
-BX_TW=22
-BX_TH=13
-BX_TINT=(red green yellow blue magenta cyan)
-
-# The shelf, read again: each box on it, its folder and its title, by number.
-fn bx_scan(int id) {
-	local d t k n=0
-
-	for d in "${BX[$id]["shelf"]:-$BX_SHELF}"/*.boxer "${BX[$id]["shelf"]:-$BX_SHELF}"/*.gamebox; do
-		[ -d "$d" ] || continue
-		t=${d##*/}
-		t=${t%.*}
-		bm_up "$d"
-		if [ -r "$d/boxer.json" ] &&
-		   json parse BXJ "$(< "$d/boxer.json")" 2> /dev/null; then
-			t := bx_title "$t"
-		fi
-		k := bx_tint "$t"
-		BX[$id]["box$n"]=$d
-		BX[$id]["tint$n"]=$k
-		BX[$id]["ttl$n"]=$t
-		n=$((n + 1))
-	done
-	BX[$id]["n"]=$n
-	[ "${BX[$id]["sel"]:-0}" -ge "$n" ] && BX[$id]["sel"]=$((n > 0 ? n - 1 : 0))
-	return 0
-}
-
-# A tint from a name: one of the six, the same name the same one every time.
-fn bx_tint(name) {
-	local k
-
-	k=$(printf '%s' "$name" | cksum)
-	ret "${BX_TINT[$((${k%% *} % ${#BX_TINT[@]}))]}"
-}
 
 # A box's own title, from the document just parsed, else the folder's name.
 fn bx_title(def) {
@@ -510,71 +478,12 @@ fn bx_fix(box) {
 	ret "$box"
 }
 
-fn boxer_open(int id, arg = "") {
-	BX[$id]["shelf"]=
-	[ -n "$arg" ] && [ -d "$arg" ] && BX[$id]["shelf"]=$arg
-	BX[$id]["seen"]=${BX[$id]["shelf"]:-$BX_SHELF}
-	mkdir -p "${BX[$id]["seen"]}" 2> /dev/null
-	BX[$id]["sel"]=0
-	BX[$id]["top"]=0
-	bx_scan "$id"
-}
-
-# How many tiles go across a window w wide.
-fn bx_cols(int w) {
-	local n=$(((w - 1) / BX_TW))
-
-	[ "$n" -lt 1 ] && n=1
-	ret "$n"
-}
-
-# A tile of the game's own when there is no cover: a colour taken from the
-# title, the title in it, wrapped.
-fn bx_card(int id, int r, int c, title, tint) {
-	local i=0 line rest=$title n=$((BX_TW - 4))
-
-	console pen black "$tint"
-	console fill -p "w$id" "$r" "$c" $((BX_TH - 3)) $((BX_TW - 2)) " "
-	while [ -n "$rest" ] && [ "$i" -lt $((BX_TH - 5)) ]; do
-		line=${rest:0:$n}
-		rest=${rest:$n}
-		console put -p "w$id" $((r + 1 + i)) $((c + 1)) "$line"
-		i=$((i + 1))
-	done
-	return 0
-}
-
-# One tile at row r, column c: the cover, then the title, which is shown as
-# selected when it is.
-fn bx_tile(int id, int i, int r, int c) {
-	local box=${BX[$id]["box$i"]} t=${BX[$id]["ttl$i"]} cv
-
-	cv := bc_path "$box" || cv=
-	if [ -n "$cv" ] && dt_has img; then
-		dt_imgm
-		img draw "$cv" "$r" "$c" $((BX_TH - 3)) $((BX_TW - 2)) \
-			"${DT_IMGARG[@]}" -p "w$id" 2> /dev/null || bx_card "$id" "$r" "$c" "$t" "${BX[$id]["tint$i"]}"
-	else
-		bx_card "$id" "$r" "$c" "$t" "${BX[$id]["tint$i"]}"
-	fi
-	if [ "$i" = "${BX[$id]["sel"]}" ]; then
-		console pen "$DT_SELINK" "$DT_ACTIVE"
-	else
-		console pen "$DT_INK" "$DT_FACE"
-	fi
-	console fill -p "w$id" $((r + BX_TH - 3)) "$c" 1 $((BX_TW - 2)) " "
-	console put -p "w$id" $((r + BX_TH - 3)) "$c" "${t:0:$((BX_TW - 2))}"
-	return 0
-}
-
-# --- the Info drawer ----------------------------------------------------------
+# --- a game's settings ----------------------------------------------------------
 #
-# Boxer's own way of changing one game's settings: a drawer at the side of the
-# shelf that shows the selected game. What is chosen is written into the
-# game's boxer.json, so it goes with the box wherever the box goes, and wins
+# Boxer's own way of changing one game's settings, in the Game Settings window.
+# What is chosen is written into the game's boxer.json, so it goes with the box wherever the box goes, and wins
 # over what Control Panel > Boxer says for every game ("default" means that).
 
-BX_IW=38
 BXI_FIELDS=(prog render aspect cycles machine sound irq dma port midi mouse)
 BXI_LABELS=("Program" "Rendering" "Shape" "Speed" "Graphics" "Sound Card" "Sound IRQ" "Sound DMA" "Sound Port" "MIDI" "Mouse")
 BXI_IRQ=(default 3 5 7 9 10 11 12)
@@ -602,13 +511,6 @@ fn bxi_path(field) {
 	midi) ret .midi ;;
 	mouse) ret .mouse ;;
 	esac
-}
-
-# Read the selected game's settings into the window's state.
-fn bx_info_load(int id) {
-	local k=${BX[$id]["sel"]:-0}
-
-	bx_info_loadbox "$id" "${BX[$id]["box$k"]-}"
 }
 
 # The same, for the box at this path: the settings dialog has no shelf.
@@ -719,22 +621,6 @@ fn bx_info_fields(int id, int r0, int c0, int w, focused) {
 	return 0
 }
 
-# The drawer, from column c0 of the window's body.
-fn bx_info_draw(int id, int h, int c0, int w) {
-	console pen "$DT_DIM" "$DT_FACE"
-	console fill -p "w$id" 1 "$c0" $((h - 2)) 1 "│"
-	c0=$((c0 + 2))
-	w=$((w - 3))
-	console pen "$DT_INK" "$DT_FACE" bold
-	dt_tput "$id" 2 "$c0" "${BX[$id]["ttl${BX[$id]["sel"]:-0}"]:0:$w}"
-	console pen "$DT_DIM" "$DT_FACE"
-	dt_tput "$id" 3 "$c0" "Settings for this game"
-	bx_info_fields "$id" 5 "$c0" "$w" "$([ "${BX[$id]["focus"]-}" = drawer ] && echo 1 || echo 0)"
-	console pen "$DT_DIM" "$DT_FACE"
-	dt_tput "$id" $((6 + ${#BXI_FIELDS[@]})) "$c0" "default: as Control Panel > Boxer"
-	return 0
-}
-
 # A key for the fields: up and down choose one, left and right step its
 # value, Enter opens its choices. Status 1 when it was not one of those.
 fn bxi_key(int id, key, int r0, int c0) {
@@ -765,235 +651,31 @@ fn bxi_click(int id, int r, int c) {
 	return 0
 }
 
-fn boxer_draw(int id, int h, int w, int row, int col) {
-	local n cols rows top i r c gw
-
-	if [ "${BX[$id]["seen"]-}" != "${BX[$id]["shelf"]:-$BX_SHELF}" ]; then
-		BX[$id]["seen"]=${BX[$id]["shelf"]:-$BX_SHELF}
-		BX[$id]["sel"]=0
-		BX[$id]["top"]=0
-		mkdir -p "${BX[$id]["seen"]}" 2> /dev/null
-		bx_scan "$id"
-	fi
-	n=${BX[$id]["n"]:-0}
-	console pen "$DT_INK" "$DT_FACE"
-	console fill -p "w$id" 1 1 $((h - 2)) $((w - 2)) " "
-
-	console pen "$DT_INK" "$DT_FACE"
-	if [ "$n" -eq 0 ]; then
-		console pen "$DT_DIM" "$DT_FACE"
-		dt_tput "$id" 2 3 "No games on this shelf yet."
-		dt_tput "$id" 4 3 "A game is a folder named NAME.boxer in:"
-		dt_tput "$id" 5 5 "${BX[$id]["shelf"]:-$BX_SHELF}"
-		dt_tput "$id" 7 3 "Drop a game's folder, a zip, or a CD image here to add it,"
-		dt_tput "$id" 8 3 "or choose File > Import a Game."
-		return 0
-	fi
-	gw=$w
-	dt_wclear "$id"
-	if [ "${BX[$id]["info"]:-0}" = 1 ] && [ "$w" -ge $((BX_IW + 34)) ]; then
-		gw=$((w - BX_IW))
-		bx_info_draw "$id" "$h" "$gw" "$BX_IW"
-	fi
-	BX[$id]["gw"]=$gw
-	cols := bx_cols "$gw"
-	rows=$(((h - 1) / BX_TH))
-	[ "$rows" -lt 1 ] && rows=1
-	BX[$id]["cols"]=$cols
-	BX[$id]["rows"]=$rows
-	top=${BX[$id]["top"]:-0}
-	for ((i = top * cols; i < n && i < (top + rows) * cols; i++)); do
-		r=$((2 + ((i / cols) - top) * BX_TH))
-		c=$((2 + (i % cols) * BX_TW))
-		bx_tile "$id" "$i" "$r" "$c"
-	done
-	return 0
-}
-
-# Move the selection to tile k, and the view to hold it.
-fn bx_select(int id, int k) {
-	local n=${BX[$id]["n"]:-0} cols=${BX[$id]["cols"]:-1} rows=${BX[$id]["rows"]:-1} top t
-
-	[ "$n" -gt 0 ] || return 0
-	[ "$k" -lt 0 ] && k=0
-	[ "$k" -ge "$n" ] && k=$((n - 1))
-	BX[$id]["sel"]=$k
-	top=${BX[$id]["top"]:-0}
-	t=$((k / cols))
-	[ "$t" -lt "$top" ] && top=$t
-	[ "$t" -ge $((top + rows)) ] && top=$((t - rows + 1))
-	BX[$id]["top"]=$top
-	[ "${BX[$id]["info"]:-0}" = 1 ] && bx_info_load "$id"
-	return 0
-}
-
-# Show or put away the Info drawer.
-fn bx_info_toggle(int id) {
-	if [ "${BX[$id]["info"]:-0}" = 1 ]; then
-		BX[$id]["info"]=0
-		BX[$id]["focus"]=grid
-	else
-		BX[$id]["info"]=1
-		bx_info_load "$id"
-	fi
-	return 0
-}
-
-# Play the selected game in a window of its own. A game with no program set
-# to run (one with several, as Boxer's own would show its program list) asks
-# which first, and remembers the answer.
-fn bx_play(int id) {
-	local k=${BX[$id]["sel"]:-0} box prog
-
-	box=${BX[$id]["box$k"]-}
-	[ -n "$box" ] || return 0
-	bx_info_loadbox "$id" "$box"
-	prog=${BX[$id]["i_prog"]-}
-	if { [ -z "$prog" ] || [ "$prog" = default ]; } && [ -n "${BX[$id]["iprogs"]}" ]; then
-		bx_choose "$id"
-		return 0
-	fi
-	dt_launch boxerplay "$box" > /dev/null ||
-		dt_notep low "Boxer cannot open the game window"
-	return 0
-}
-
-# Ask which of the game's programs to run, under the tile.
-fn bx_choose(int id) {
-	local -a o
-
-	read -ra o <<< "${BX[$id]["iprogs"]}"
-	BX[$id]["pick"]=prog
-	dt_droplist "$id" "${BX[$id]["lr"]:-3}" "${BX[$id]["lc"]:-3}" bx_chose "${o[@]}"
-}
-
-fn bx_chose(int id, value = "") {
-	local box=${BX[$id]["ibox"]-}
-
-	bx_info_set "$id" prog "$value"
-	dt_launch boxerplay "$box" > /dev/null ||
-		dt_notep low "Boxer cannot open the game window"
-	return 0
-}
-
-# A game that was put on the shelf to be installed, and is already installed:
-# its files are the game.
-fn bx_installed(int id) {
-	local k=${BX[$id]["sel"]:-0} box
-
-	box=${BX[$id]["box$k"]-}
-	[ -n "$box" ] || return 0
-	bd_finish "$box" 1
-	bx_scan "$id"
-	[ "${BX[$id]["info"]:-0}" = 1 ] && bx_info_load "$id"
-	return 0
-}
-
-fn bx_refresh(int id) {
-	bx_scan "$id"
-	return 0
-}
-
-fn boxer_key(int id, key) {
-	local k=${BX[$id]["sel"]:-0} cols=${BX[$id]["cols"]:-1} i=${BX[$id]["ifield"]:-0} f
-	local nf=${#BXI_FIELDS[@]}
-
-	if [ "${BX[$id]["info"]:-0}" = 1 ]; then
-		case $key in
-		tab)
-			if [ "${BX[$id]["focus"]-}" = drawer ]; then BX[$id]["focus"]=grid; else BX[$id]["focus"]=drawer; fi
-			return 0 ;;
-		esac
-		if [ "${BX[$id]["focus"]-}" = drawer ]; then
-			case $key in
-			escape) BX[$id]["focus"]=grid; return 0 ;;
-			i) bx_info_toggle "$id"; return 0 ;;
-			esac
-			bxi_key "$id" "$key" 5 $((${BX[$id]["gw"]:-0} + 2))
-			return $?
-		fi
-	fi
-	case $key in
-	i) bx_info_toggle "$id" ;;
-	left) bx_select "$id" $((k - 1)) ;;
-	right) bx_select "$id" $((k + 1)) ;;
-	up) bx_select "$id" $((k - cols)) ;;
-	down) bx_select "$id" $((k + cols)) ;;
-	home) bx_select "$id" 0 ;;
-	end) bx_select "$id" "${BX[$id]["n"]:-0}" ;;
-	enter) bx_play "$id" ;;
-	r) bx_refresh "$id" ;;
-	*) return 1 ;;
-	esac
-	return 0
-}
-
-# A press picks the tile under it; a second press on the same tile, soon
-# enough, plays it. dt_isdbl is the window's, not the tile's, so the tile is
-# kept here.
-fn boxer_click(int id, int r, int c, btn = "") {
-	local cols=${BX[$id]["cols"]:-1} top=${BX[$id]["top"]:-0} k tr tc dbl=0 tag f i
-
-	if [ "${BX[$id]["info"]:-0}" = 1 ]; then
-		if bxi_click "$id" "$r" "$c"; then
-			BX[$id]["focus"]=drawer
-			return 0
-		fi
-		[ "$c" -gt "${BX[$id]["gw"]:-0}" ] && return 0
-		BX[$id]["focus"]=grid
-	fi
-	[ "${BX[$id]["n"]:-0}" -gt 0 ] || return 0
-	[ "$r" -ge 2 ] && [ "$c" -ge 2 ] || return 0
-	tr=$(((r - 2) / BX_TH))
-	tc=$(((c - 2) / BX_TW))
-	[ "$tc" -lt "$cols" ] || return 0
-	k=$(((top + tr) * cols + tc))
-	[ "$k" -lt "${BX[$id]["n"]}" ] || return 0
-	dt_isdbl "$id" && dbl=1
-	BX[$id]["lr"]=$r
-	BX[$id]["lc"]=$c
-	bx_select "$id" "$k"
-	if [ "$dbl" = 1 ] && [ "${BX[$id]["last"]-}" = "$k" ]; then
-		bx_play "$id"
-	fi
-	BX[$id]["last"]=$k
-	return 0
-}
-
-fn boxer_wheel(int id, dir, int r, int c) {
-	local top=${BX[$id]["top"]:-0} cols=${BX[$id]["cols"]:-1} n=${BX[$id]["n"]:-0}
-	local last=$(((n - 1) / cols))
-
-	case $dir in
-	up) [ "$top" -gt 0 ] && top=$((top - 1)) ;;
-	down) [ "$top" -lt "$last" ] && top=$((top + 1)) ;;
-	esac
-	BX[$id]["top"]=$top
-	return 0
-}
-
-# Import each path given, then show the shelf again. The copy is done here,
-# in the desktop's own time, so a very large game holds the window still.
+# Import each path given. The copy is done here, in the desktop's own time, so
+# a very large game holds the window still.
 fn bx_import_all(int id, ...paths) {
-	local p b n=0
+	local p b n=0 names=
 
-	BX_TO=${BX[$id]["shelf"]:-$BX_SHELF}
+	BX_TO=$BX_SHELF
 	mkdir -p "$BX_TO" 2> /dev/null
 
 	for p in "${paths[@]}"; do
-		b := bx_import "$p" && n=$((n + 1))
+		if b := bx_import "$p"; then
+			n=$((n + 1))
+			b=${b##*/}
+			names="$names${names:+, }${b%.boxer}"
+		fi
 	done
 	BX_TO=
-	bx_scan "$id"
 	if [ "$n" -gt 0 ]; then
-		dt_notep low "Added $n to the shelf"
+		BX[$id]["status"]="Added $names"
 	else
-		dt_notep low "Boxer could not import that"
+		BX[$id]["status"]="Boxer could not import that"
 	fi
 	return 0
 }
 
-# A folder, archive, CD image or program dropped from Files: put on the shelf.
+# A folder, archive, CD image or program dropped from Files: made into a game.
 fn boxer_drop(int id, int r, int c, op, ...paths) {
 	bx_import_all "$id" "${paths[@]}"
 }
@@ -1008,82 +690,269 @@ fn bx_pick(int id) {
 		"$HOME" "" bx_picked "$id"
 }
 
-fn boxer_close(int id) {
-	unset "BX[$id]"
-}
-
-# A press: left as a click, right selects the tile under it and opens the
-# tile's own menu. (An app with a _mouse is told every press, drag and release
-# here, and a right press never reaches _click.)
-fn boxer_mouse(int id, act, btn, int r, int c, mods = "") {
-	local cols=${BX[$id]["cols"]:-1} top=${BX[$id]["top"]:-0} k tr tc
-
-	case ${act##*-} in press) ;; *) return 0 ;; esac
-	if [ "$btn" != right ]; then
-		boxer_click "$id" "$r" "$c" "$btn"
-		return 0
-	fi
-	[ "${BX[$id]["n"]:-0}" -gt 0 ] || return 0
-	[ "$r" -ge 2 ] && [ "$c" -ge 2 ] && [ "$c" -le "${BX[$id]["gw"]:-9999}" ] || return 0
-	tr=$(((r - 2) / BX_TH))
-	tc=$(((c - 2) / BX_TW))
-	[ "$tc" -lt "$cols" ] || return 0
-	k=$(((top + tr) * cols + tc))
-	[ "$k" -lt "${BX[$id]["n"]}" ] || return 0
-	BX[$id]["lr"]=$r
-	BX[$id]["lc"]=$c
-	bx_select "$id" "$k"
-	dt_context_open boxer "$id" $((${DT[$id]["row"]} + r)) $((${DT[$id]["col"]} + c))
+fn bx_folder(int id) {
+	mkdir -p "$BX_SHELF" 2> /dev/null
+	dt_launch files "$BX_SHELF" > /dev/null
 	return 0
 }
 
-# What a game's own menu holds.
-fn boxer_context(int id) {
-	dt_menu "Game"
-	dt_item "Play" p bx_play "$id"
-	dt_item "Get Info${GL[ellipsis]}" i bx_getinfo "$id"
-	bx_info_loadbox "$id" "${BX[$id]["box${BX[$id]["sel"]:-0}"]-}"
-	[ "$(bp_state_of "${BX[$id]["ibox"]-}")" = installing ] && dt_item "Game Is Already Installed" a bx_installed "$id"
-	dt_item "Fetch Cover" c bx_fetchcover "$id"
-	dt_sep
-	dt_item "Show in Files" f bx_reveal "$id"
+# --- the import window ----------------------------------------------------------
+#
+# A diskette and a CD, drawn in half blocks so that any terminal shows them, and
+# what to do with them.
+
+declare -gA BXA=([k]="#1b1b2f" [b]="#3b5bdb" [m]="#ced4da" [M]="#868e96" [w]="#f8f9fa" [r]="#e03131"
+	[S]="#f1f3f5" [s]="#adb5bd" [p]="#845ef7" [c]="#22b8cf")
+BXA_DISK=("kkkkkkkkkkkkkkk." "kbbbmmmmmmmbbbbk" "kbbbmmmMMmmbbbbk" "kbbbmmmMMmmbbbbk" "kbbbmmmmmmmbbbbk" "kbbbbbbbbbbbbbbk" "kbbbbbbbbbbbbbbk" "kbwwwwwwwwwwwwbk" "kbwrrrrrrrrrrwbk" "kbwwwwwwwwwwwwbk" "kbwrrrrrrrwwwwbk" "kbwwwwwwwwwwwwbk" "kbwwwwwwwwwwwwbk" "kbbbbbbbbbbbbbbk" "kbbbbbbbbbbbbbbk" "kkkkkkkkkkkkkkkk")
+BXA_CD=("......kkkk......" "....kkssSSkk...." "..kkccsSSSsskk.." "..kcccSSSssssk.." ".kccccSSSSssssk." ".kcccSSkkSSsssk." "kssSSSk..kSSsssk" "ksSSSk....kSsssk" "kSSSSk....kSsssk" "kSSsSSk..kSSsssk" ".ksssSSkkSSpppk." ".kssssSSSSppppk." "..kssssssspppk.." "..kkssssssppkk.." "....kksssskk...." "......kkkk......")
+
+# A 16 by 16 picture of letters, one half block to a pixel, at row r0, column c0.
+fn bx_pix(int id, int r0, int c0, ...rows) {
+	local y x t b run glyph fg bg rs
+
+	for ((y = 0; y < 16; y += 2)); do
+		x=0
+		while [ "$x" -lt 16 ]; do
+			t=${rows[$y]:$x:1}
+			b=${rows[$((y + 1))]:$x:1}
+			run=1
+			while [ $((x + run)) -lt 16 ] && [ "${rows[$y]:$((x + run)):1}" = "$t" ] &&
+			      [ "${rows[$((y + 1))]:$((x + run)):1}" = "$b" ]; do
+				run=$((run + 1))
+			done
+			if [ "$t" != . ] || [ "$b" != . ]; then
+				if [ "$t" = . ]; then glyph="▄"; fg=${BXA[$b]}; bg=$DT_FACE
+				elif [ "$b" = . ]; then glyph="▀"; fg=${BXA[$t]}; bg=$DT_FACE
+				else glyph="▀"; fg=${BXA[$t]}; bg=${BXA[$b]}; fi
+				console pen "$fg" "$bg"
+				printf -v rs '%*s' "$run" ""
+				console put -p "w$id" $((r0 + y / 2)) $((c0 + x)) "${rs// /$glyph}"
+			fi
+			x=$((x + run))
+		done
+	done
+	return 0
 }
 
-# Fetch the selected game's cover from the internet, asked for by name.
-fn bx_fetchcover(int id) {
-	local k=${BX[$id]["sel"]:-0} box st
+fn boxer_open(int id, arg = "") {
+	BX[$id]["status"]=
+	BX[$id]["focus"]=import
+	[ -n "$arg" ] && bx_import_all "$id" "$arg"
+	return 0
+}
 
-	box=${BX[$id]["box$k"]-}
-	[ -n "$box" ] || return 0
-	bc_fetch "$box"
-	st=$?
-	case $st in
-	0) bx_scan "$id"; dt_notep low "Cover found for ${BX[$id]["ttl$k"]}" ;;
-	2) dt_notep high "What came back was not a PNG, so it was not kept" ;;
-	*) dt_notep low "No cover found for ${BX[$id]["ttl$k"]}, or it could not be fetched" ;;
+fn boxer_draw(int id, int h, int w, int row, int col) {
+	local f=${BX[$id]["focus"]:-import} l
+
+	dt_wclear "$id"
+	console pen "$DT_INK" "$DT_FACE"
+	console fill -p "w$id" 1 1 $((h - 2)) $((w - 2)) " "
+	bx_pix "$id" 2 5 "${BXA_DISK[@]}"
+	bx_pix "$id" 2 27 "${BXA_CD[@]}"
+	console pen "$DT_INK" "$DT_FACE" bold
+	dt_tput "$id" 3 47 "Drop a game here"
+	console pen "$DT_INK" "$DT_FACE"
+	dt_tput "$id" 5 47 "a folder, a zip,"
+	dt_tput "$id" 6 47 "a disc image or"
+	dt_tput "$id" 7 47 "a program"
+	console pen "$DT_DIM" "$DT_FACE"
+	dt_tput "$id" 11 3 "Games are kept in"
+	console pen "$DT_INK" "$DT_FACE"
+	dt_tput "$id" 12 3 "${BX_SHELF:0:$((w - 6))}"
+	console pen "$DT_DIM" "$DT_FACE"
+	dt_tput "$id" 14 3 "Double-click a game in Files to play it."
+	l=${BX[$id]["status"]-}
+	if [ -n "$l" ]; then
+		console pen "$DT_ACTIVE" "$DT_FACE" bold
+		dt_tput "$id" 16 3 "${l:0:$((w - 6))}"
+	fi
+	dt_dlgbtns "$id" "$h" "$w" "$f" import "Import${GL[ellipsis]}" folder "Open Games Folder"
+	return 0
+}
+
+fn boxer_key(int id, key) {
+	local f=${BX[$id]["focus"]:-import} d
+	local -a o=(import folder)
+
+	if d := dt_focuskey "$key" 1; then
+		BX[$id]["focus"] := dt_focus "$f" "$d" "${o[@]}"
+		return 0
+	fi
+	case $key in
+	enter) if [ "$f" = folder ]; then bx_folder "$id"; else bx_pick "$id"; fi ;;
+	i) bx_pick "$id" ;;
+	f) bx_folder "$id" ;;
 	esac
 	return 0
 }
 
-# Open the game's settings in a window of their own.
-fn bx_getinfo(int id) {
-	local k=${BX[$id]["sel"]:-0} box
+fn boxer_click(int id, int r, int c, btn = "") {
+	local tag
 
-	box=${BX[$id]["box$k"]-}
-
-	[ -n "$box" ] || return 0
-	dt_launch boxerinfo "$box" > /dev/null
+	tag := dt_hit "$id" "$r" "$c" || return 0
+	case $tag in
+	import) bx_pick "$id" ;;
+	folder) bx_folder "$id" ;;
+	esac
 	return 0
 }
 
-fn bx_reveal(int id) {
-	local k=${BX[$id]["sel"]:-0} box
+fn boxer_close(int id) {
+	unset "BX[$id]"
+}
 
-	box=${BX[$id]["box$k"]-}
+# --- Fetch Cover and Game Is Already Installed, from a game's right-click menu in
+# Files: each a small window that asks first and says what happened.
 
-	[ -n "$box" ] || return 0
-	dt_launch files "${box%/*}" > /dev/null
+fn bx_askopen(int id, box) {
+	local t
+
+	bm_up "$box"
+	BX[$id]["ibox"]=$box
+	t=${box##*/}
+	t=${t%.*}
+	if [ -r "$box/boxer.json" ] && json parse BXJ "$(< "$box/boxer.json")" 2> /dev/null; then
+		t := bx_title "$t"
+	fi
+	BX[$id]["name"]=$t
+	BX[$id]["said"]=
+	BX[$id]["focus"]=ok
 	return 0
+}
+
+fn bx_askdraw(int id, int h, int w, ...lines) {
+	local i=2 l
+
+	dt_wclear "$id"
+	console pen "$DT_INK" "$DT_FACE"
+	console fill -p "w$id" 1 1 $((h - 2)) $((w - 2)) " "
+	for l in "${lines[@]}"; do
+		dt_tput "$id" "$i" 3 "${l:0:$((w - 6))}"
+		i=$((i + 1))
+	done
+	return 0
+}
+
+fn boxercover_open(int id, arg = "") {
+	bx_askopen "$id" "$arg"
+}
+
+fn boxercover_draw(int id, int h, int w, int row, int col) {
+	local n=${BX[$id]["name"]}
+
+	if [ -n "${BX[$id]["said"]}" ]; then
+		bx_askdraw "$id" "$h" "$w" "${BX[$id]["said"]}"
+		dt_dlgbtns "$id" "$h" "$w" ok ok OK
+		return 0
+	fi
+	bx_askdraw "$id" "$h" "$w" "Fetch the box art for $n from the internet?" "" \
+		"This sends the game's name to thumbnails.libretro.com."
+	dt_dlgbtns "$id" "$h" "$w" "${BX[$id]["focus"]}" ok Fetch cancel Cancel
+}
+
+fn bx_coverdo(int id) {
+	local st
+
+	if [ -n "${BX[$id]["said"]}" ]; then
+		dt_del "$id"
+		return 0
+	fi
+	bc_fetch "${BX[$id]["ibox"]}"
+	st=$?
+	case $st in
+	0) BX[$id]["said"]="Found a cover for ${BX[$id]["name"]}." ;;
+	2) BX[$id]["said"]="What came back was not a PNG, so it was not kept." ;;
+	*) BX[$id]["said"]="No cover found for ${BX[$id]["name"]}, or it could not be fetched." ;;
+	esac
+	return 0
+}
+
+fn boxercover_key(int id, key) {
+	local f=${BX[$id]["focus"]} d
+	local -a o=(ok cancel)
+
+	if d := dt_focuskey "$key" 1; then
+		BX[$id]["focus"] := dt_focus "$f" "$d" "${o[@]}"
+		return 0
+	fi
+	case $key in
+	escape) dt_del "$id" ;;
+	enter) if [ "$f" = cancel ]; then dt_del "$id"; else bx_coverdo "$id"; fi ;;
+	esac
+	return 0
+}
+
+fn boxercover_click(int id, int r, int c, btn = "") {
+	local tag
+
+	tag := dt_hit "$id" "$r" "$c" || return 0
+	case $tag in ok) bx_coverdo "$id" ;; cancel) dt_del "$id" ;; esac
+	return 0
+}
+
+fn boxercover_close(int id) {
+	unset "BX[$id]"
+}
+
+fn boxerdone_open(int id, arg = "") {
+	bx_askopen "$id" "$arg"
+	BX[$id]["waiting"]=0
+	[ "$(bp_state_of "$arg")" = installing ] && BX[$id]["waiting"]=1
+	return 0
+}
+
+fn boxerdone_draw(int id, int h, int w, int row, int col) {
+	local n=${BX[$id]["name"]}
+
+	if [ "${BX[$id]["waiting"]}" != 1 ] || [ -n "${BX[$id]["said"]}" ]; then
+		if [ -n "${BX[$id]["said"]}" ]; then
+			bx_askdraw "$id" "$h" "$w" "${BX[$id]["said"]}"
+		else
+			bx_askdraw "$id" "$h" "$w" "$n is not waiting to be installed."
+		fi
+		dt_dlgbtns "$id" "$h" "$w" ok ok OK
+		return 0
+	fi
+	bx_askdraw "$id" "$h" "$w" "Is $n already installed?" "" \
+		"Its disc's files will be the game, and the disc is let go."
+	dt_dlgbtns "$id" "$h" "$w" "${BX[$id]["focus"]}" ok Yes cancel Cancel
+}
+
+fn bx_donedo(int id) {
+	if [ "${BX[$id]["waiting"]}" != 1 ] || [ -n "${BX[$id]["said"]}" ]; then
+		dt_del "$id"
+		return 0
+	fi
+	bd_finish "${BX[$id]["ibox"]}" 1
+	BX[$id]["said"]="Done: ${BX[$id]["name"]} plays from its files now."
+	return 0
+}
+
+fn boxerdone_key(int id, key) {
+	local f=${BX[$id]["focus"]} d
+	local -a o=(ok cancel)
+
+	if d := dt_focuskey "$key" 1; then
+		BX[$id]["focus"] := dt_focus "$f" "$d" "${o[@]}"
+		return 0
+	fi
+	case $key in
+	escape) dt_del "$id" ;;
+	enter) if [ "$f" = cancel ]; then dt_del "$id"; else bx_donedo "$id"; fi ;;
+	esac
+	return 0
+}
+
+fn boxerdone_click(int id, int r, int c, btn = "") {
+	local tag
+
+	tag := dt_hit "$id" "$r" "$c" || return 0
+	case $tag in ok) bx_donedo "$id" ;; cancel) dt_del "$id" ;; esac
+	return 0
+}
+
+fn boxerdone_close(int id) {
+	unset "BX[$id]"
 }
 
 # --- About -----------------------------------------------------------------------
@@ -1254,17 +1123,6 @@ fn boxerinfo_click(int id, int r, int c, btn = "") {
 
 fn boxerinfo_close(int id) {
 	unset "BX[$id]"
-}
-
-boxer_menus() {
-	dt_menu "File"
-	dt_item "Play" p bx_play "$DT_FOCUS"
-	dt_item "Import a Game…" i bx_pick "$DT_FOCUS"
-	dt_item "Refresh" r bx_refresh "$DT_FOCUS"
-	dt_item "Info" i bx_info_toggle "$DT_FOCUS"
-	dt_sep
-	dt_item "Close" w dt_close_focused
-	dt_editmenu
 }
 
 # From a shell: boxer.hibr import PATH... puts each on the shelf and says where.

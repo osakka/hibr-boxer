@@ -92,8 +92,7 @@ def png(path, w, h, rgb):
                            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
-# The shelf: three boxes, one with a cover; the grid shows their titles, the arrow keys move the selection and
-# Enter opens the selected game in a window of its own.
+# Three games in the games folder, one with a cover.
 shelf = os.path.join(D, "shelf")
 shutil.rmtree(shelf, True)
 os.makedirs(shelf)
@@ -103,102 +102,33 @@ for nm in ("Alpha Quest", "Beta Racer", "Gamma Blast"):
 png(os.path.join(shelf, "Beta Racer.boxer", "cover.png"), 60, 80, (200, 40, 40))
 
 
-def shelfdesk(pix, move=""):
-    p = sx.scratch("boxer.hibr")
+def appdesk(app, arg, pix=False, rows=40, cols=100):
+    p = sx.scratch("boxerapp.hibr")
     open(p, "w").write(
         "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\n"
-        "dt_open\nBID := dt_launch boxer \"%s\"\n%sdt_run\ndt_close\n"
-        % (load("console", "img", RETRO), DESK, ROOT, ROOT, shelf, move))
+        "dt_open\nBID := dt_launch %s \"%s\"\ndt_run\ndt_close\n"
+        % (load("console", "img", RETRO), DESK, ROOT, ROOT, app, arg))
     kw = dict(cellw=8, cellh=16, caps=["kitty"]) if pix else {}
-    return Term(p, rows=40, cols=100, settle=1.0, env=ENVBASE, **kw)
+    return Term(p, rows=rows, cols=cols, settle=1.0, env=ENVBASE, **kw)
 
 
-t = shelfdesk(True)
-t.collect(2.0)
-sc = t.screen()
-check("the shelf lists every box by its title",
-      all(n in sc.text() for n in ("Alpha Quest", "Beta Racer", "Gamma Blast")), sc)
-t.send(b"r")
-t.collect(1.0)
-check("a cover.png is drawn as a picture", t.raw.count(b"a=T") >= 1, t.raw.count(b"a=T"))
-t.send(b"\x1b[C")
-t.collect(0.8)
-sc2 = t.screen()
-check("the arrow key moves the selection", sc2.style(sc.find("Beta Racer")[0], sc.find("Beta Racer")[1]) !=
-      sc.style(sc.find("Beta Racer")[0], sc.find("Beta Racer")[1]), (sc.find("Beta Racer"),))
-t.send(b"\r")
-for _ in range(20):
-    t.collect(0.3)
-    if "Boxer Game" in t.screen().text():
-        break
-check("Enter opens the selected game in a window of its own", "Boxer Game" in t.screen().text(), t.screen())
-check("and it is the selected one, not whichever is first: the window is titled Beta Racer and is not an error",
-      "Beta Racer" in t.screen().text() and "Not a Boxer game" not in t.screen().text(), t.screen())
-t.close()
+# The Boxer window is where a game is brought in: a diskette and a CD in half blocks, in pixels and without.
+for pix in (True, False):
+    t = appdesk("boxer", "", pix)
+    t.collect(1.5)
+    tx = t.screen().text()
+    check("the Boxer window offers to take a game (%s): drop one, Import, and the games folder" % ("kitty" if pix else "half blocks"),
+          all(w in tx for w in ("Drop a game here", "Import", "Open Games Folder", "Games are kept in")), t.screen())
+    check("and it has a diskette and a CD drawn in it, not a list of games", tx.count("\u2580") + tx.count("\u2584") > 40
+          and "Alpha Quest" not in tx, tx.count("\u2580"))
+    t.close()
 
-
-# Double click: a press on a tile selects it; two presses on the same tile plays it, and two on different
-# tiles in a row does not.
-t = shelfdesk(False)
-t.collect(1.5)
-sc = t.screen()
-ra, ca = sc.find("Alpha Quest")
-rb, cb = sc.find("Beta Racer")
-t.send(sx.press(ra, ca + 2) + sx.release(ra, ca + 2) + sx.press(rb - 3, cb + 2) + sx.release(rb - 3, cb + 2))
-t.collect(1.0)
-check("a press on one tile then another does not play either", "Boxer Game" not in t.screen().text(),
-      t.screen())
-one = sx.press(rb - 3, cb + 2) + sx.release(rb - 3, cb + 2)
-t.send(one)
-t.collect(0.15)
-t.send(one)
-for _ in range(20):
-    t.collect(0.3)
-    if "Boxer Game" in t.screen().text():
-        break
-check("a second press on the same tile plays that game in a window of its own",
-      "Boxer Game" in t.screen().text(), t.screen())
-t.close()
-
-# The Info drawer: `i` opens it with the selected game's settings; Tab goes into it, Down and Right change a
-# field, and the choice is written into the box's own boxer.json.
-t = shelfdesk(False)
-t.collect(1.5)
-t.send(b"i")
-t.collect(0.8)
-sc = t.screen()
-check("i opens the Info drawer for the selected game", "Rendering" in sc.text() and "Settings for this game" in sc.text(), sc)
-t.send(b"\t")
-t.send(b"\x1b[B")
-t.send(b"\x1b[C")
-t.collect(0.8)
-doc = open(os.path.join(shelf, "Alpha Quest.boxer", "boxer.json")).read()
-check("a field changed with the keys is written into that box", '"render": "follow"' in doc, doc)
-t.send(b"\x1b[B\x1b[B\x1b[C")
-t.collect(0.6)
-doc = open(os.path.join(shelf, "Alpha Quest.boxer", "boxer.json")).read()
-check("and the next one down too (Speed)", '"cycles": "auto"' in doc, doc)
-t.close()
-
-
-# A right click on a game opens its own menu; Get Info opens the settings in a window of their own, the same fields.
-t = shelfdesk(False, 'dt_resize "$BID" 28 80\ndt_move "$BID" 6 14\n')
-t.collect(1.5)
-sc = t.screen()
-rb, cb = sc.find("Beta Racer")
-t.send(sx.press(rb - 3, cb + 2, 2) + sx.release(rb - 3, cb + 2, 2))
-t.collect(1.0)
-check("a right click on a game opens its menu with Play, Get Info and Show in Files",
-      all(w in t.screen().text() for w in ("Play", "Get Info", "Show in Files")), t.screen())
-pr, pc = t.screen().find("Get Info")
-check("and the menu is where the click was, not in a corner of the screen",
-      abs(pr - (rb - 3)) <= 4 and abs(pc - (cb + 2)) <= 12, ((pr, pc), (rb - 3, cb + 2)))
-t.send(b"\x1b[B")
-t.send(b"\r")
+# Get Info opens the settings in a window of their own; a field changed there is written into the box.
+t = appdesk("boxerinfo", os.path.join(shelf, "Beta Racer.boxer"))
 t.collect(1.2)
 sc = t.screen()
-check("Get Info opens the game's settings: program, speed, graphics, sound card, IRQ, DMA, port, MIDI, mouse",
-      all(w in sc.text() for w in ("Beta Racer Settings", "Program", "Speed", "Graphics", "Sound Card", "Sound IRQ",
+check("Get Info opens the game's settings: name, program, speed, graphics, sound card, IRQ, DMA, port, MIDI, mouse",
+      all(w in sc.text() for w in ("Beta Racer Settings", "Name", "Program", "Speed", "Graphics", "Sound Card", "Sound IRQ",
                                    "Sound DMA", "Sound Port", "MIDI", "Mouse")), sc)
 t.send(b"\x1b[B" * 6 + b"\x1b[C")
 t.collect(0.8)
@@ -261,6 +191,15 @@ def doc(b):
     return json.load(open(os.path.join(b, "boxer.json")))
 
 
+# A game dropped on it is made into a game and the window says so.
+dd = os.path.join(D, "dropme", "Dropped Game")
+os.makedirs(dd)
+open(dd + "/GAME.EXE", "wb").write(b"MZ" + bytes(62))
+out, err = imp("BX_SHELF=%s/dropgames; boxer_open 1 ''; boxer_drop 1 0 0 move '%s'; echo \"status=${BX[1][status]}\"" % (D, dd))
+check("a game dropped on the window becomes a NAME.boxer in the games folder, and it is said", os.path.isdir(D + "/dropgames/Dropped Game.boxer")
+      and "Added Dropped Game" in out, (out, err))
+
+
 out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"" % D)
 b1 = out.split("box=")[1].strip() if "box=" in out else ""
 d1 = doc(b1) if b1 else {}
@@ -319,9 +258,9 @@ check("a game in a C.harddisk folder is installed already, hoisted, and its one 
 check("and names DOS cannot hold are changed, the path being a real file",
       bp and os.path.exists(bp + "/drives/c/" + dp["launch"]["program"].replace("C:\\", "").replace("\\", "/")),
       dp.get("launch"))
-out, err = imp("bx_import_all 9 %s/src/Prince %s/src/nothing-here; echo \"n=${BX[9][n]}\"" % (D, D))
-check("a drop imports what it can, skips what it cannot, and the shelf is read again",
-      any(("n=%d" % k) in out for k in range(4, 9)), out + err)
+out, err = imp("bx_import_all 9 %s/src/Prince %s/src/nothing-here; echo \"status=${BX[9][status]}\"" % (D, D))
+check("a drop imports what it can and skips what it cannot, the window saying what was added",
+      "status=Added Prince" in out, out + err)
 
 # The whole way, on the real core when DBP_CORE names one (cores/build.sh makes it): a folder holding a DOS
 # program is imported, its run.conf is given to DOSBox Pure, and the program's text is on the screen -- with the
@@ -490,26 +429,19 @@ check("a game's speed, graphics and sound are written into the conf after the pe
       and "[sblaster]\nsbtype=sbpro2\nsbbase=240\nirq=5\ndma=3" in out
       and out.index("cycles=max") < out.index("cycles=8000"), out + err)
 
-# A game with several programs and none chosen asks which to run, when played, and remembers the answer.
+# A game with several programs and none chosen asks which to run, in its own window, and remembers the answer.
 csh = os.path.join(D, "chooser")
 os.makedirs(csh)
 shutil.copytree(b2, os.path.join(csh, os.path.basename(b2)))
-p2 = sx.scratch("boxer.hibr")
-open(p2, "w").write(
-    "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\n"
-    "dt_open\nBID := dt_launch boxer \"%s\"\ndt_run\ndt_close\n"
-    % (load("console", "img", RETRO), DESK, ROOT, ROOT, csh))
-t = Term(p2, rows=40, cols=100, settle=1.0, env=ENVBASE)
+t = appdesk("boxerplay", os.path.join(csh, os.path.basename(b2)))
 t.collect(1.5)
-t.send(b"\r")
-t.collect(1.0)
-check("playing a game with no program chosen offers its programs", "PRINCE.EXE" in t.screen().text() and "Boxer Game" not in t.screen().text(),
+check("playing a game with no program chosen offers its programs", "PRINCE.EXE" in t.screen().text() and "Which program" in t.screen().text(),
       t.screen())
 t.send(b"\r")
 t.collect(1.5)
 saved = doc(os.path.join(csh, os.path.basename(b2))).get("launch", {}).get("program", "")
-check("choosing one runs it in a window of its own and is remembered as the program to run",
-      "Boxer Game" in t.screen().text() and saved.endswith(".EXE") or saved.endswith(".BAT"), (saved, t.screen()))
+check("choosing one runs it and is remembered as the program to run",
+      "Which program" not in t.screen().text() and (saved.endswith(".EXE") or saved.endswith(".BAT")), (saved, t.screen()))
 t.close()
 
 # A game that lives on its disc (Dungeon Keeper wants its CD in D: to be played at all): the image is the box's D:,
@@ -550,6 +482,23 @@ out, err = imp("mkdir -p %s/bun/X.boxer %s/bun/Y.dir; dt_isbundle %s/bun/X.boxer
                "dt_openverbs %s/bun/X.boxer; echo \"verb=${DT_OVLIST[*]}:${DT_OPENVERBS[0][label]}:${DT_OPENVERBS[0][app]}\"" % ((D,) * 5))
 check("a .boxer folder is a bundle for Boxer, and has Get Info... as a verb that opens the settings window",
       "bundle" in out and "plain" not in out and "Get Info..." in out and ":boxerinfo" in out, out + err)
+
+# The verbs Files offers on a .boxer folder: Get Info, Fetch Cover and Game Is Already Installed, each a small window.
+out, err = imp("mkdir -p %s/bun/V.boxer; dt_openverbs %s/bun/V.boxer; for i in \"${DT_OVLIST[@]}\"; do echo \"verb=${DT_OPENVERBS[$i][label]}\"; done" % (D, D))
+check("a .boxer folder is offered Get Info, Fetch Cover and Game Is Already Installed",
+      all(w in out for w in ("verb=Get Info...", "verb=Fetch Cover...", "verb=Game Is Already Installed...")), out + err)
+t = appdesk("boxercover", os.path.join(shelf, "Beta Racer.boxer"))
+t.collect(1.0)
+check("Fetch Cover asks first, and says the game's name goes to the server",
+      "Fetch the box art for Beta Racer" in t.screen().text() and "thumbnails.libretro.com" in t.screen().text(), t.screen())
+t.send(b"\x1b")
+t.collect(0.6)
+check("and Escape lets it go without fetching", "Fetch the box art" not in t.screen().text() and not os.path.exists(os.path.join(shelf, "Beta Racer.boxer", ".cover.png")), t.screen())
+t.close()
+t = appdesk("boxerdone", os.path.join(shelf, "Beta Racer.boxer"))
+t.collect(1.0)
+check("Game Is Already Installed says so when the game is not waiting for an install", "not waiting to be installed" in t.screen().text(), t.screen())
+t.close()
 
 # About Boxer names Boxer, says this is a tribute, and gives its author and where it lives.
 pa = sx.scratch("boxerabout.hibr")

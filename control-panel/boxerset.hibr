@@ -1,18 +1,18 @@
 #!/usr/bin/env hibr
 #
-# boxerset -- the Control Panel pane for Boxer: where the shelf of games is,
+# boxerset -- the Control Panel pane for Boxer: where the games are kept,
 # how a game is drawn (as pixels, or as half blocks for a slow link), the
 # shape of its picture, the key that fills the display, how long a key is
 # held, and the sound. These are for every game; a game's own are in the
-# shelf's Info drawer, and win. Named boxerset, not boxer, because the app
+# Get Info window, and win. Named boxerset, not boxer, because the app
 # owns the boxer_ prefix; the dialog is bxfield.
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.3
+app boxerset "The Control Panel pane for Boxer" 0.4
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
-	dt_app bxfield "Shelf Folder" 9 64 "" "" fixed hidden
+	dt_app bxfield "Games Folder" 9 64 "" "" fixed hidden
 
 # The shelf: the person's Dos Games folder in their home, unless a shelf from
 # before it was called that is there and the new one is not, which is kept
@@ -73,7 +73,7 @@ fn bxs_midis() {
 fn boxerset_rows(int w) {
 	local n=0
 
-	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Shelf"; n=$((n + 1))
+	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Games"; n=$((n + 1))
 	CP[$w][$n]["kind"]=action; CP[$w][$n]["text"]="Folder${GL[ellipsis]}"
 	CP[$w][$n]["val"]="$BX_SHELF"; CP[$w][$n]["key"]=shelf
 	n=$((n + 1))
@@ -155,7 +155,7 @@ fn boxerset_drop(int? w = "", int? r = "", int? c = "", k = "") {
 
 # One field: the folder, typed, a ~ meaning the home folder.
 fn bxs_dialog(what = shelf) {
-	local h=9 w=64 r c rid title="Shelf Folder"
+	local h=9 w=64 r c rid title="Games Folder"
 
 	dt_dlgat "$h" "$w"
 	r=$DT_DLGR c=$DT_DLGC h=$DT_DLGH w=$DT_DLGW
@@ -206,7 +206,7 @@ fn bxfield_ok(int id) {
 		return 0
 	fi
 	if [ -z "${p// /}" ]; then
-		dt_notep high "A shelf needs a folder"
+		dt_notep high "A games folder is needed"
 		return 0
 	fi
 	mkdir -p "$p" 2> /dev/null || {
