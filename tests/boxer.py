@@ -103,12 +103,12 @@ for nm in ("Alpha Quest", "Beta Racer", "Gamma Blast"):
 png(os.path.join(shelf, "Beta Racer.boxer", "cover.png"), 60, 80, (200, 40, 40))
 
 
-def shelfdesk(pix):
+def shelfdesk(pix, move=""):
     p = sx.scratch("boxer.hibr")
     open(p, "w").write(
         "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\n"
-        "dt_open\nBID := dt_launch boxer \"%s\"\ndt_run\ndt_close\n"
-        % (load("console", "img", RETRO), DESK, ROOT, ROOT, shelf))
+        "dt_open\nBID := dt_launch boxer \"%s\"\n%sdt_run\ndt_close\n"
+        % (load("console", "img", RETRO), DESK, ROOT, ROOT, shelf, move))
     kw = dict(cellw=8, cellh=16, caps=["kitty"]) if pix else {}
     return Term(p, rows=40, cols=100, settle=1.0, env=ENVBASE, **kw)
 
@@ -182,7 +182,7 @@ t.close()
 
 
 # A right click on a game opens its own menu; Get Info opens the settings in a window of their own, the same fields.
-t = shelfdesk(False)
+t = shelfdesk(False, 'dt_resize "$BID" 28 80\ndt_move "$BID" 6 14\n')
 t.collect(1.5)
 sc = t.screen()
 rb, cb = sc.find("Beta Racer")
@@ -190,6 +190,9 @@ t.send(sx.press(rb - 3, cb + 2, 2) + sx.release(rb - 3, cb + 2, 2))
 t.collect(1.0)
 check("a right click on a game opens its menu with Play, Get Info and Show in Files",
       all(w in t.screen().text() for w in ("Play", "Get Info", "Show in Files")), t.screen())
+pr, pc = t.screen().find("Get Info")
+check("and the menu is where the click was, not in a corner of the screen",
+      abs(pr - (rb - 3)) <= 4 and abs(pc - (cb + 2)) <= 12, ((pr, pc), (rb - 3, cb + 2)))
 t.send(b"\x1b[B")
 t.send(b"\r")
 t.collect(1.2)

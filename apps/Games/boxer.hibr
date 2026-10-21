@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games on a shelf" 0.6
+app boxer "DOS games on a shelf" 0.7
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -851,7 +851,7 @@ fn boxer_mouse(int id, act, btn, int r, int c, mods = "") {
 	BX[$id]["lr"]=$r
 	BX[$id]["lc"]=$c
 	bx_select "$id" "$k"
-	dt_context_open boxer "$id" "$r" "$c"
+	dt_context_open boxer "$id" $((${DT[$id]["row"]} + r)) $((${DT[$id]["col"]} + c))
 	return 0
 }
 
