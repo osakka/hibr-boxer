@@ -541,5 +541,11 @@ if shutil.which("xorriso"):
         litc = sum(1 for i in range(0, 640 * 30 * 3, 3) if pxc[i] > 128) if pxc else 0
         check("and it plays from the CD: the program on D: ran from the image DOS sees as a CD-ROM", litc > 20, (litc, out2[-300:], err2[-300:]))
 
+# Boxer registers itself for .boxer folders (hibr #318): a box is a bundle, opened by the game window, with Get Info as a verb.
+out, err = imp("mkdir -p %s/bun/X.boxer %s/bun/Y.dir; dt_isbundle %s/bun/X.boxer && echo bundle; dt_isbundle %s/bun/Y.dir && echo plain; "
+               "dt_openverbs %s/bun/X.boxer; echo \"verb=${DT_OVLIST[*]}:${DT_OPENVERBS[0][label]}:${DT_OPENVERBS[0][app]}\"" % ((D,) * 5))
+check("a .boxer folder is a bundle for Boxer, and has Get Info... as a verb that opens the settings window",
+      "bundle" in out and "plain" not in out and "Get Info..." in out and ":boxerinfo" in out, out + err)
+
 shutil.rmtree(D, True)
 report()

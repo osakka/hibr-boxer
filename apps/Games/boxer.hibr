@@ -17,13 +17,15 @@
 strict
 
 
-app boxer "DOS games on a shelf" 0.5
+app boxer "DOS games on a shelf" 0.6
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
 command -v dt_app > /dev/null && dt_app boxer "Boxer" 40 100 "" "▣"
 command -v dt_app > /dev/null && dt_app boxerinfo "Game Settings" 17 60 "" "" fixed hidden
 command -v dt_keepstate > /dev/null && dt_keepstate boxer BX
+command -v dt_opener > /dev/null && dt_opener boxerplay "Boxer" "boxer" app boxerplay dir
+command -v dt_openerverb > /dev/null && dt_openerverb boxer "Get Info..." boxerinfo
 
 declare -gA BX BXJ
 BX_TO=
