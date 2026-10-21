@@ -181,7 +181,7 @@ a unit**, and the desktop treats it as one object. Extension `.gamebox`
 
 ```
 Prince of Persia.gamebox/
-  gamebox.json         identity and launch recipe (see below)
+  boxer.json         identity and launch recipe (see below)
   cover.png            the box art; a generated tile when absent
   engine/
     dosbox.conf        per-game overrides, layered over the shelf's base conf
@@ -195,7 +195,7 @@ Prince of Persia.gamebox/
   MANIFEST.sha256      optional; makes a gamebox verifiable when it is shared
 ```
 
-`gamebox.json`, JSON because the desktop's data convention is JSON (ADR 0028):
+`boxer.json`, JSON because the desktop's data convention is JSON (ADR 0028):
 
 ```json
 {
@@ -289,7 +289,7 @@ installer. The pipeline:
    walk for `.exe` `.com` `.bat`, and rank names like `install`, `setup`,
    `config` as installers and tools, everything else as launchers.
 3. **Build the gamebox**: create the folder, copy into `drives/c/`, write
-   `gamebox.json` and a stub conf.
+   `boxer.json` and a stub conf.
 4. **If an installer was found**, run it once inside the gamebox's own C:
    drive (so the installed game lands in the box), then rescan for programs
    and let the person pick the launcher.

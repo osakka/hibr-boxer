@@ -25,8 +25,8 @@ def gamebox(name="Test Game"):
     os.makedirs(b + "/drives/c/GAME")
     open(b + "/drives/c/GAME/RUN.EXE", "w").write("x")
     open(b + "/engine/dosbox.conf", "w").write("[cpu]\ncycles=max\n[autoexec]\necho mine\n[sdl]\nfullscreen=false\n")
-    open(b + "/gamebox.json", "w").write(
-        '{"gamebox":1,"title":"%s","engine":"dosbox",'
+    open(b + "/boxer.json", "w").write(
+        '{"boxer":1,"title":"%s","engine":"dosbox",'
         '"launch":{"program":"C:\\\\GAME\\\\RUN.EXE","args":"-fast"},'
         '"mounts":[{"drive":"d","kind":"cdrom","path":"drives/d/game.cue"}],'
         '"display":{"aspect":"4:3"}}' % name)
@@ -49,7 +49,7 @@ box = gamebox()
 # program's folder and starts it with its arguments.
 hb = sx.HIBR
 import subprocess
-r = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxerplay.hibr\njson parse BPJ \"$(< '%s/gamebox.json')\"\n"
+r = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxerplay.hibr\njson parse BPJ \"$(< '%s/boxer.json')\"\n"
                     "mkdir -p %s/o; f := bp_conf '%s' %s/o; cat \"$f\""
                     % (load("console"), DESK, ROOT, box, D, box, D)],
                    capture_output=True, text=True, env=dict(os.environ, **ENVBASE), timeout=60)
@@ -133,7 +133,7 @@ for _ in range(20):
         break
 check("Enter opens the selected game in a window of its own", "Boxer Game" in t.screen().text(), t.screen())
 check("and it is the selected one, not whichever is first: the window is titled Beta Racer and is not an error",
-      "Beta Racer" in t.screen().text() and "Not a gamebox" not in t.screen().text(), t.screen())
+      "Beta Racer" in t.screen().text() and "Not a Boxer game" not in t.screen().text(), t.screen())
 t.close()
 
 
@@ -161,7 +161,7 @@ check("a second press on the same tile plays that game in a window of its own",
 t.close()
 
 # The Info drawer: `i` opens it with the selected game's settings; Tab goes into it, Down and Right change a
-# field, and the choice is written into the box's own gamebox.json.
+# field, and the choice is written into the box's own boxer.json.
 t = shelfdesk(False)
 t.collect(1.5)
 t.send(b"i")
@@ -172,11 +172,11 @@ t.send(b"\t")
 t.send(b"\x1b[B")
 t.send(b"\x1b[C")
 t.collect(0.8)
-doc = open(os.path.join(shelf, "Alpha Quest.boxer", "gamebox.json")).read()
+doc = open(os.path.join(shelf, "Alpha Quest.boxer", "boxer.json")).read()
 check("a field changed with the keys is written into that box", '"render": "follow"' in doc, doc)
 t.send(b"\x1b[B\x1b[B\x1b[C")
 t.collect(0.6)
-doc = open(os.path.join(shelf, "Alpha Quest.boxer", "gamebox.json")).read()
+doc = open(os.path.join(shelf, "Alpha Quest.boxer", "boxer.json")).read()
 check("and the next one down too (Speed)", '"cycles": "auto"' in doc, doc)
 t.close()
 
@@ -202,7 +202,7 @@ check("Get Info opens the game's settings: program, speed, graphics, sound card,
                                    "Sound DMA", "Sound Port", "MIDI", "Mouse")), sc)
 t.send(b"\x1b[B" * 6 + b"\x1b[C")
 t.collect(0.8)
-doc = open(os.path.join(shelf, "Beta Racer.boxer", "gamebox.json")).read()
+doc = open(os.path.join(shelf, "Beta Racer.boxer", "boxer.json")).read()
 check("a field changed in that window (Sound IRQ) is written into the box", '"irq": "3"' in doc, doc)
 t.close()
 
@@ -258,7 +258,7 @@ def imp(*a):
 
 def doc(b):
     import json
-    return json.load(open(os.path.join(b, "gamebox.json")))
+    return json.load(open(os.path.join(b, "boxer.json")))
 
 
 out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"" % D)
@@ -333,7 +333,7 @@ if dbp and os.path.exists(dbp):
     open(hsrc + "/HELLO.COM", "wb").write(
         b"\xb4\x09\xba\x10\x01\xcd\x21\xb4\x00\xcd\x16\xb8\x00\x4c\xcd\x21Hello from Boxer$")
     out, err = imp(". %s/apps/boxerplay.hibr" % ROOT,
-                   "b := bx_import %s; mkdir -p %s/hrun; json parse BPJ \"$(< \"$b/gamebox.json\")\"; "
+                   "b := bx_import %s; mkdir -p %s/hrun; json parse BPJ \"$(< \"$b/boxer.json\")\"; "
                    "f := bp_conf \"$b\" %s/hrun; echo \"$b|$f\"" % (hsrc, D, D))
     out = out.strip()
     check("the real core: a folder is imported and its conf made", "|" in out, out + err)
@@ -363,7 +363,7 @@ if dbp and os.path.exists(dbp):
         open(cb + "/drives/c/CLICK.COM", "wb").write(
             b"\xb8\x00\x00\xcd\x33\xb8\x01\x00\xcd\x33\xb8\x03\x00\xcd\x33\xf6\xc3\x01\x74\xf6"
             b"\xb4\x02\xb2\xdb\xcd\x21\xb4\x02\xb2\xdb\xcd\x21\xb8\x00\x4c\xcd\x21")
-        open(cb + "/gamebox.json", "w").write('{"gamebox":1,"title":"Clicker","launch":{"program":"C:\\\\CLICK.COM"}}')
+        open(cb + "/boxer.json", "w").write('{"boxer":1,"title":"Clicker","launch":{"program":"C:\\\\CLICK.COM"}}')
         t = desk("", cb, False, {"BP_CORE": dbp})
         for _ in range(40):
             t.collect(0.25)
@@ -386,7 +386,7 @@ if dbp and os.path.exists(dbp):
         os.makedirs(pb + "/drives/c")
         open(pb + "/drives/c/MOUSE.COM", "wb").write(
             b"\xb8\x00\x00\xcd\x33\xb8\x01\x00\xcd\x33\xb4\x00\xcd\x16\xb8\x00\x4c\xcd\x21")
-        open(pb + "/gamebox.json", "w").write('{"gamebox":1,"title":"Pointer","launch":{"program":"C:\\\\MOUSE.COM"}}')
+        open(pb + "/boxer.json", "w").write('{"boxer":1,"title":"Pointer","launch":{"program":"C:\\\\MOUSE.COM"}}')
         t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', pb, False, {"BP_CORE": dbp})
         for _ in range(40):
             t.collect(0.25)
@@ -481,7 +481,7 @@ check("Save makes the folder", os.path.isdir(target), os.listdir(D))
 
 # What the drawer wrote is what DOSBox is told: sections after the person's own, so they win.
 out, err = imp(". %s/apps/boxerplay.hibr" % ROOT,
-               "b='%s/Alpha Quest.boxer'; json parse BPJ \"$(< \"$b/gamebox.json\")\"; mkdir -p %s/tune; "
+               "b='%s/Alpha Quest.boxer'; json parse BPJ \"$(< \"$b/boxer.json\")\"; mkdir -p %s/tune; "
                "json set BPJ .machine vgaonly -s; json set BPJ .sound.card sbpro2 -s; json set BPJ .sound.irq 5 -s; "
                "json set BPJ .sound.dma 3 -s; json set BPJ .sound.port 240 -s; json set BPJ .cpu.cycles 8000 -s; "
                "f := bp_conf \"$b\" %s/tune; cat \"$f\"" % (shelf, D, D))
@@ -534,7 +534,7 @@ if shutil.which("xorriso"):
           dr.get("state") == "installed" and dr.get("programs") == ["D:\\HELLO.COM"] and dr.get("launch", {}).get("program") == "D:\\HELLO.COM", (out, err, dr))
     if dbp and os.path.exists(dbp) and br:
         out2, err2 = imp(". %s/apps/boxerplay.hibr" % ROOT,
-                         "b='%s'; json parse BPJ \"$(< \"$b/gamebox.json\")\"; mkdir -p %s/cdrun; f := bp_conf \"$b\" %s/cdrun; echo \"CONF=$f\"" % (br, D, D))
+                         "b='%s'; json parse BPJ \"$(< \"$b/boxer.json\")\"; mkdir -p %s/cdrun; f := bp_conf \"$b\" %s/cdrun; echo \"CONF=$f\"" % (br, D, D))
         conf = out2.split("CONF=")[1].strip() if "CONF=" in out2 else ""
         ppm = os.path.join(D, "cd.ppm")
         if conf:
@@ -566,6 +566,49 @@ t.collect(0.6)
 check("and Enter closes it", "tribute to Boxer" not in t.screen().text(), t.screen())
 t.close()
 
+def boxnamed(n):
+    b = os.path.join(D, "art-" + n + ".boxer")
+    shutil.rmtree(b, True)
+    os.makedirs(b + "/drives/c")
+    open(b + "/boxer.json", "w").write('{"boxer":1,"title":"%s"}' % n)
+    return b
+
+
+# A box made when its file was gamebox.json has it renamed boxer.json when touched, the rest kept.
+ob = os.path.join(D, "Old Game.boxer")
+shutil.rmtree(ob, True)
+os.makedirs(ob + "/drives/c")
+open(ob + "/gamebox.json", "w").write('{"gamebox":1,"title":"Old Game","launch":{"program":"C:\\\\X.EXE"}}')
+out, err = imp("bm_up '%s'; ls '%s'; json parse BXJ \"$(< '%s/boxer.json')\"; json get BXJ .launch.program" % (ob, ob, ob))
+check("a box with the old gamebox.json name has it renamed boxer.json, and what it held is kept",
+      "boxer.json" in out and "gamebox.json" not in out and "X.EXE" in out, (out, err))
+
+# The game's name is in its Game Settings window: typed there it changes the title and the folder together; a name
+# another game has is refused.
+rb = boxnamed("Rename Me")
+os.rename(rb, os.path.join(D, "Rename Me.boxer"))
+rb = os.path.join(D, "Rename Me.boxer")
+boxnamed("Taken")
+os.rename(os.path.join(D, "art-Taken.boxer"), os.path.join(D, "Taken.boxer"))
+pr = sx.scratch("boxerren.hibr")
+open(pr, "w").write(
+    "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\n"
+    "dt_open\nBID := dt_launch boxerinfo \"%s\"\ndt_run\ndt_close\n" % (load("console", "img", RETRO), DESK, ROOT, ROOT, rb))
+t = Term(pr, rows=40, cols=100, settle=1.0, env=ENVBASE)
+t.collect(1.0)
+check("the Game Settings window has the game's name in a field of its own", "Name" in t.screen().text() and "Rename Me" in t.screen().text(), t.screen())
+t.send(b"\t")
+t.send(b"\x7f" * 9 + b"Taken\r")
+t.collect(0.8)
+check("a name another game has is refused and nothing is renamed", os.path.isdir(rb) and "Taken" not in open(rb + "/boxer.json").read(), t.screen())
+t.send(b"\x7f" * 9 + b"Brand New\r")
+t.collect(0.8)
+nb = os.path.join(D, "Brand New.boxer")
+check("a new name changes the title and the folder together",
+      os.path.isdir(nb) and not os.path.isdir(rb) and '"title": "Brand New"' in open(nb + "/boxer.json").read(), (os.listdir(D), t.screen()))
+check("and the window is called by it", "Brand New Settings" in t.screen().text(), t.screen())
+t.close()
+
 # Box art: a cover is .cover.png in the box; one placed there wins, one beside the game is taken in, and, only when
 # Control Panel > Boxer says so, one is fetched by the game's name from a server of covers (here a local one standing in).
 import http.server, threading
@@ -591,14 +634,6 @@ srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 url = "http://127.0.0.1:%d/" % srv.server_address[1]
 ENVBASE["BX_ART_URL"] = url
-
-
-def boxnamed(n):
-    b = os.path.join(D, "art-" + n + ".boxer")
-    shutil.rmtree(b, True)
-    os.makedirs(b + "/drives/c")
-    open(b + "/gamebox.json", "w").write('{"gamebox":1,"title":"%s"}' % n)
-    return b
 
 
 def lit(path):

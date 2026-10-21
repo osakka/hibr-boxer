@@ -8,7 +8,7 @@
 # hibr's own renderer: pixels where the terminal takes them, half blocks
 # where it does not.
 #
-# The gamebox says what to run: its gamebox.json names a program (and its
+# The gamebox says what to run: its boxer.json names a program (and its
 # arguments) and any CD or floppy images, and engine/dosbox.conf holds the
 # person's own DOSBox settings. At launch they are put together into one
 # run.conf in the runtime folder -- the settings first (an [autoexec] of
@@ -259,7 +259,14 @@ fn bd_mkiso(dir, out) {
 	xorriso -as mkisofs -quiet -r -iso-level 1 -V GAME -o "$out" "$dir" > /dev/null 2>&1
 }
 
-# Write the box's gamebox.json from what is in its drives, keeping what the
+# A box made before the file was called boxer.json has it called gamebox.json:
+# renamed, once, whenever a box is touched.
+fn bm_up(box) {
+	[ -e "$box/boxer.json" ] || [ ! -e "$box/gamebox.json" ] || command mv -f -- "$box/gamebox.json" "$box/boxer.json" 2> /dev/null
+	return 0
+}
+
+# Write the box's boxer.json from what is in its drives, keeping what the
 # person has set: the programs, which one launches, the CD, and where the box
 # is in its installing. state is installing, installed, or empty.
 fn bd_describe(box, name, state = "") {
@@ -267,7 +274,8 @@ fn bd_describe(box, name, state = "") {
 	local -A keep
 	local -a oldd
 
-	if [ -r "$box/gamebox.json" ] && json parse BPJ "$(< "$box/gamebox.json")" 2> /dev/null; then
+	bm_up "$box"
+	if [ -r "$box/boxer.json" ] && json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null; then
 		for p in .title .display.render .display.aspect .cpu.cycles .machine .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .launch.args .source.imported; do
 			old := json get BPJ "$p" 2> /dev/null || old=
 			[ -n "$old" ] && keep[$p]=$old
@@ -280,7 +288,7 @@ fn bd_describe(box, name, state = "") {
 		done
 		[ -n "${keep[.title]-}" ] && name=${keep[.title]}
 	fi
-	json parse BPJ '{"gamebox":1,"engine":"dosbox","launch":{},"programs":[],"mounts":[]}'
+	json parse BPJ '{"boxer":1,"engine":"dosbox","launch":{},"programs":[],"mounts":[]}'
 	json set BPJ .title "$name" -s
 	for p in "${!keep[@]}"; do
 		[ "$p" = .title ] && continue
@@ -336,7 +344,7 @@ fn bd_describe(box, name, state = "") {
 	fi
 	[ -n "${keep[.display.aspect]-}" ] || json set BPJ .display.aspect default -s
 	[ -n "${keep[.source.imported]-}" ] || json set BPJ .source.imported "$(date +%F)" -s
-	json emit BPJ -p > "$box/gamebox.json"
+	json emit BPJ -p > "$box/boxer.json"
 	return 0
 }
 
@@ -348,8 +356,9 @@ fn bd_describe(box, name, state = "") {
 fn bd_finish(box, asis = 0) {
 	local t d sub img stage f
 
-	[ -r "$box/gamebox.json" ] || return 1
-	json parse BPJ "$(< "$box/gamebox.json")" 2> /dev/null || return 1
+	bm_up "$box"
+	[ -r "$box/boxer.json" ] || return 1
+	json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null || return 1
 	t := bp_get BPJ .title "${box##*/}"
 	if [ "$asis" = 1 ] || [ -z "$(ls -A "$box/drives/c" 2> /dev/null)" ]; then
 		d="$box/drives/d"
@@ -392,12 +401,13 @@ fn bd_finish(box, asis = 0) {
 fn bp_state_of(box) {
 	local v=
 
-	[ -r "$box/gamebox.json" ] && json parse BPJ "$(< "$box/gamebox.json")" 2> /dev/null &&
+	bm_up "$box"
+	[ -r "$box/boxer.json" ] && json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null &&
 		{ v := json get BPJ .state 2> /dev/null || v=; }
 	ret "$v"
 }
 
-# The text of one field of a gamebox's gamebox.json, or the default.
+# The text of one field of a gamebox's boxer.json, or the default.
 fn bp_get(doc, path, def = "") {
 	local v
 
@@ -537,16 +547,17 @@ fn boxerplay_open(int id, arg = "") {
 
 	BP[$id]["err"]=
 	BP[$id]["box"]=$box
-	if [ ! -r "$box/gamebox.json" ]; then
-		BP[$id]["err"]="Not a gamebox: $box"
+	bm_up "$box"
+	if [ ! -r "$box/boxer.json" ]; then
+		BP[$id]["err"]="Not a Boxer game: $box"
 		return 0
 	fi
 	need retro 2> /dev/null || {
 		BP[$id]["err"]="The retro module is not installed"
 		return 0
 	}
-	json parse BPJ "$(< "$box/gamebox.json")" 2> /dev/null || {
-		BP[$id]["err"]="gamebox.json is not valid"
+	json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null || {
+		BP[$id]["err"]="boxer.json is not valid"
 		return 0
 	}
 	title := bp_get BPJ .title "${box##*/}"

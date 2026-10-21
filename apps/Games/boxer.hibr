@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games on a shelf" 0.8
+app boxer "DOS games on a shelf" 0.9
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -59,8 +59,9 @@ fn bx_scan(int id) {
 		[ -d "$d" ] || continue
 		t=${d##*/}
 		t=${t%.*}
-		if [ -r "$d/gamebox.json" ] &&
-		   json parse BXJ "$(< "$d/gamebox.json")" 2> /dev/null; then
+		bm_up "$d"
+		if [ -r "$d/boxer.json" ] &&
+		   json parse BXJ "$(< "$d/boxer.json")" 2> /dev/null; then
 			t := bx_title "$t"
 		fi
 		k := bx_tint "$t"
@@ -287,9 +288,10 @@ fn bc_match(title, lst) {
 fn bc_fetch(box) {
 	local lst title enc tmp magic url
 
+	bm_up "$box"
 	lst := bc_list || return 1
 	url := bc_url
-	json parse BCJ "$(< "$box/gamebox.json")" 2> /dev/null || return 1
+	json parse BCJ "$(< "$box/boxer.json")" 2> /dev/null || return 1
 	title := bp_get BCJ .title "${box##*/}"
 	title=${title%.boxer}
 	enc := bc_match "$title" "$lst"
@@ -490,8 +492,17 @@ fn bx_copyin(work, box, name) {
 # A box made before its names were made DOS-sized, or by hand: the same
 # treatment, what the person set kept.
 fn bx_fix(box) {
-	[ -r "$box/gamebox.json" ] || { echo "boxer: not a box: $box" >&2; return 1; }
-	json parse BXJ "$(< "$box/gamebox.json")" || return 1
+	local new
+
+	case $box in
+	*.gamebox)
+		new=${box%.gamebox}.boxer
+		[ -e "$new" ] || { command mv -- "$box" "$new" && box=$new; }
+		;;
+	esac
+	bm_up "$box"
+	[ -r "$box/boxer.json" ] || { echo "boxer: not a box: $box" >&2; return 1; }
+	json parse BXJ "$(< "$box/boxer.json")" || return 1
 	bx_hoist "$box/drives/c"
 	bx_dosify "$box/drives/c"
 	[ -d "$box/drives/d" ] && bx_dosify "$box/drives/d"
@@ -560,7 +571,7 @@ fn bx_tile(int id, int i, int r, int c) {
 #
 # Boxer's own way of changing one game's settings: a drawer at the side of the
 # shelf that shows the selected game. What is chosen is written into the
-# game's gamebox.json, so it goes with the box wherever the box goes, and wins
+# game's boxer.json, so it goes with the box wherever the box goes, and wins
 # over what Control Panel > Boxer says for every game ("default" means that).
 
 BX_IW=38
@@ -604,11 +615,12 @@ fn bx_info_load(int id) {
 fn bx_info_loadbox(int id, box) {
 	local f v n i p
 
+	bm_up "$box"
 	BX[$id]["ibox"]=$box
 	BX[$id]["iprogs"]=
 	for f in "${BXI_FIELDS[@]}"; do BX[$id]["i_$f"]=default; done
-	[ -r "$box/gamebox.json" ] || return 0
-	json parse BXJ "$(< "$box/gamebox.json")" 2> /dev/null || return 0
+	[ -r "$box/boxer.json" ] || return 0
+	json parse BXJ "$(< "$box/boxer.json")" 2> /dev/null || return 0
 	for f in "${BXI_FIELDS[@]}"; do
 		p := bxi_path "$f"
 		v := json get BXJ "$p" 2> /dev/null || v=
@@ -626,12 +638,13 @@ fn bx_info_loadbox(int id, box) {
 fn bx_info_set(int id, field, value) {
 	local box=${BX[$id]["ibox"]-} p
 
-	[ -r "$box/gamebox.json" ] || return 0
-	json parse BXJ "$(< "$box/gamebox.json")" 2> /dev/null || return 0
+	bm_up "$box"
+	[ -r "$box/boxer.json" ] || return 0
+	json parse BXJ "$(< "$box/boxer.json")" 2> /dev/null || return 0
 	p := bxi_path "$field"
 	json set BXJ "$p" "$value" -s
 	[ "$field" = prog ] && json set BXJ .installer false
-	json emit BXJ -p > "$box/gamebox.json"
+	json emit BXJ -p > "$box/boxer.json"
 	BX[$id]["i_$field"]=$value
 	return 0
 }
@@ -1127,34 +1140,114 @@ fn boxerabout_click(int id, int r, int c, btn = "") {
 # extension (hibr #318), from the same menu there.
 
 fn boxerinfo_open(int id, arg = "") {
+	local t
+
 	bx_info_loadbox "$id" "$arg"
 	BX[$id]["ifield"]=0
-	BX[$id]["name"]=${arg##*/}
-	BX[$id]["name"]=${BX[$id]["name"]%.*}
-	dt_retitle "$id" "${BX[$id]["name"]} Settings"
+	BX[$id]["nfocus"]=0
+	t=${arg##*/}
+	t=${t%.*}
+	bm_up "$arg"
+	if [ -r "$arg/boxer.json" ] && json parse BXJ "$(< "$arg/boxer.json")" 2> /dev/null; then
+		t := bx_title "$t"
+	fi
+	BX[$id]["name"]=$t
+	BX[$id]["ntext"]=$t
+	BX[$id]["ncur"]=${#t}
+	dt_retitle "$id" "$t Settings"
+}
+
+# Give the game the name typed, in its boxer.json and as its folder, which
+# are kept the same. A name another game has is refused.
+fn bx_rename(int id) {
+	local box=${BX[$id]["ibox"]-} new=${BX[$id]["ntext"]-} dest
+
+	new=${new//[$'\t\n']/ }
+	new=${new#"${new%%[! ]*}"}
+	new=${new%"${new##*[! ]}"}
+	if [ -z "$new" ] || [ "${new//\//}" != "$new" ] || [ "${new:0:1}" = . ]; then
+		dt_notep high "A name needs letters, and no slash or leading dot"
+		return 0
+	fi
+	dest="${box%/*}/$new.boxer"
+	if [ "$dest" != "$box" ] && [ -e "$dest" ]; then
+		dt_notep high "There is already a game called $new"
+		return 0
+	fi
+	bm_up "$box"
+	[ -r "$box/boxer.json" ] || return 0
+	json parse BXJ "$(< "$box/boxer.json")" 2> /dev/null || return 0
+	json set BXJ .title "$new" -s
+	json emit BXJ -p > "$box/boxer.json"
+	if [ "$dest" != "$box" ]; then
+		command mv -- "$box" "$dest" || { dt_notep high "Cannot rename the folder"; return 0; }
+		BX[$id]["ibox"]=$dest
+	fi
+	BX[$id]["name"]=$new
+	BX[$id]["ntext"]=$new
+	BX[$id]["ncur"]=${#new}
+	BX[$id]["nfocus"]=0
+	dt_retitle "$id" "$new Settings"
+	return 0
 }
 
 fn boxerinfo_draw(int id, int h, int w, int row, int col) {
+	local on=${BX[$id]["nfocus"]:-0} cur=0
+
 	dt_wclear "$id"
 	console pen "$DT_INK" "$DT_FACE"
 	console fill -p "w$id" 1 1 $((h - 2)) $((w - 2)) " "
 	console pen "$DT_INK" "$DT_FACE" bold
-	dt_tput "$id" 1 2 "${BX[$id]["name"]:0:$((w - 4))}"
-	bx_info_fields "$id" 3 2 $((w - 4)) 1
+	dt_tput "$id" 1 2 "Name"
+	console pen "$DT_INK" "$DT_FACE"
+	[ "$on" = 1 ] && cur=${BX[$id]["ncur"]}
+	dt_textdraw "$id" 1 12 $((w - 14)) "${BX[$id]["ntext"]}" "$cur" "$on"
+	dt_wreg "$id" 1 12 $((w - 14)) name
+	bx_info_fields "$id" 3 2 $((w - 4)) "$((1 - on))"
 	console pen "$DT_DIM" "$DT_FACE"
 	dt_tput "$id" $((4 + ${#BXI_FIELDS[@]})) 2 "default: as Control Panel > Boxer. Up, down, left, right, enter."
 	return 0
 }
 
 fn boxerinfo_key(int id, key) {
+	local res
+
+	if [ "${BX[$id]["nfocus"]:-0}" = 1 ]; then
+		case $key in
+		escape) BX[$id]["ntext"]=${BX[$id]["name"]}; BX[$id]["nfocus"]=0; return 0 ;;
+		enter) bx_rename "$id"; return 0 ;;
+		tab | down) BX[$id]["nfocus"]=0; return 0 ;;
+		esac
+		res := dt_textkey "${BX[$id]["ntext"]}" "${BX[$id]["ncur"]}" "$key" || return 0
+		BX[$id]["ntext"]=${res% *}
+		BX[$id]["ncur"]=${res##* }
+		return 0
+	fi
 	case $key in
 	escape) dt_del "$id"; return 0 ;;
+	tab) BX[$id]["nfocus"]=1; BX[$id]["ncur"]=${#BX[$id]["ntext"]}; return 0 ;;
+	up)
+		if [ "${BX[$id]["ifield"]:-0}" = 0 ]; then
+			BX[$id]["nfocus"]=1
+			BX[$id]["ncur"]=${#BX[$id]["ntext"]}
+			return 0
+		fi
+		;;
 	esac
 	bxi_key "$id" "$key" 3 2
 	return 0
 }
 
 fn boxerinfo_click(int id, int r, int c, btn = "") {
+	local tag
+
+	tag := dt_hit "$id" "$r" "$c" || tag=
+	if [ "$tag" = name ]; then
+		BX[$id]["nfocus"]=1
+		BX[$id]["ncur"]=${#BX[$id]["ntext"]}
+		return 0
+	fi
+	BX[$id]["nfocus"]=0
 	bxi_click "$id" "$r" "$c"
 	return 0
 }
@@ -1194,7 +1287,8 @@ if [ -z "${DT_ROWS-}" ]; then
 	cover)
 		shift
 		b=${1-}
-		[ -r "$b/gamebox.json" ] || { echo "boxer: cover BOX [PNG|fetch]" >&2; exit 1; }
+		bm_up "$b"
+		[ -r "$b/boxer.json" ] || { echo "boxer: cover BOX [PNG|fetch]" >&2; exit 1; }
 		case ${2-fetch} in
 		fetch) bc_fetch "$b" || { echo "boxer: no cover found for ${b##*/}" >&2; exit 1; } ;;
 		*) bc_set "$b" "$2" || exit 1 ;;
