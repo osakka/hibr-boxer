@@ -22,7 +22,7 @@ app boxer "DOS games on a shelf" 0.8
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
 command -v dt_app > /dev/null && dt_app boxer "Boxer" 40 100 "" "▣"
-command -v dt_app > /dev/null && dt_app boxerabout "About Boxer" 17 68 "" "" fixed hidden
+command -v dt_app > /dev/null && dt_app boxerabout "About Boxer" 17 78 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxerinfo "Game Settings" 17 60 "" "" fixed hidden
 command -v dt_keepstate > /dev/null && dt_keepstate boxer BX
 command -v dt_opener > /dev/null && dt_opener boxerplay "Boxer" "boxer" app boxerplay dir
@@ -183,8 +183,11 @@ fn bx_dosify(root) {
 # (https://thumbnails.libretro.com/DOS/Named_Boxarts/). Fetching sends the
 # game's name to that server, so it is off until it is turned on; a cover that
 # is already there is never replaced. What comes back is checked to be a
-# PNG of a sane size before it is kept.
+# PNG of a sane size before it is kept (a real cover is tens of KB; 60 bytes is
+# only less than the smallest PNG there is). Fetching waits on the network, up
+# to half a minute a download, as an import waits on its copying.
 
+declare -gA BCJ
 BX_ART="${BX_ART-off}"
 command -v dt_keep > /dev/null && dt_keep BX_ART
 
@@ -286,8 +289,8 @@ fn bc_fetch(box) {
 
 	lst := bc_list || return 1
 	url := bc_url
-	json parse BXJ "$(< "$box/gamebox.json")" 2> /dev/null || return 1
-	title := bp_get BXJ .title "${box##*/}"
+	json parse BCJ "$(< "$box/gamebox.json")" 2> /dev/null || return 1
+	title := bp_get BCJ .title "${box##*/}"
 	title=${title%.boxer}
 	enc := bc_match "$title" "$lst"
 	[ -n "$enc" ] || return 1
@@ -1074,7 +1077,7 @@ fn bx_reveal(int id) {
 
 # About Boxer: what this is a tribute to, and whose it is.
 fn boxer_about() {
-	local h=17 w=68 rid
+	local h=17 w=78 rid
 
 	dt_dlgat "$h" "$w"
 	rid := dt_new "About Boxer" "$DT_DLGH" "$DT_DLGW" "$DT_DLGR" "$DT_DLGC" boxerabout
@@ -1091,8 +1094,8 @@ fn boxerabout_draw(int id, int h, int w, int row, int col) {
 		"  https://boxerapp.com"
 		"  https://github.com/alunbestor/Boxer"
 		""
-		"How a game is recognised, installed and shelved here follows Boxer's"
-		"own rules, read from its source (GPL-2.0, Alun Bestor and contributors)."
+		"How a game is recognised, installed and shelved here follows Boxer's own"
+		"rules, read from its source (GPL-2.0, Alun Bestor and contributors)."
 		""
 		"Games run in DOSBox Pure, a libretro core. Box art, when fetching is on,"
 		"comes from the libretro thumbnails project."

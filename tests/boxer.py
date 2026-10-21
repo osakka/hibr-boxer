@@ -560,7 +560,7 @@ t = Term(pa, rows=40, cols=100, settle=1.0, env=ENVBASE)
 t.collect(1.0)
 tx = t.screen().text()
 check("About Boxer is a tribute to Boxer, with its author and its address",
-      all(w in tx for w in ("tribute to Boxer", "Alun Bestor", "https://boxerapp.com", "github.com/alunbestor/Boxer")), t.screen())
+      all(w in tx for w in ("tribute to Boxer", "Alun Bestor", "https://boxerapp.com", "github.com/alunbestor/Boxer", "and contributors)", "thumbnails project.")), t.screen())
 t.send(b"\r")
 t.collect(0.6)
 check("and Enter closes it", "tribute to Boxer" not in t.screen().text(), t.screen())
