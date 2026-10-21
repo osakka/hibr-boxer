@@ -29,3 +29,11 @@ How a game is run: `gamebox.json` names the program and the CD images, `engine/d
 | the emulators themselves | DOSBox Pure, built from pinned source by `cores/build.sh` (3 MB); ScummVM was dropped, see [ADR 0002](docs/adr/0002-dos-only.md) |
 
 Licence: MIT, as the rest of hibr.
+
+## Box art
+
+A game's cover is `.cover.png` in its box (`cover.png` is read too). One you put there always wins; one that came with a game, or sits beside it, is taken in on import. When **Control Panel > Boxer > Fetch Box Art** is on (it is off by default: it sends the game's name to a server), import also fetches the picture from the libretro thumbnails project (https://thumbnails.libretro.com/DOS/Named_Boxarts/), matched by name: the same name, or, for a numbered game such as "Leisure Suit Larry 2", the title that begins with it. A series name alone is not guessed at. A download is kept only if it is a PNG. `boxer.hibr cover BOX [PNG]` fetches or sets one, `boxer.hibr covers` fills in the shelf, and a game's right-click menu has Fetch Cover.
+
+## Credit
+
+hibr-boxer is a tribute to Boxer, the DOS game box for the Mac, by Alun Bestor (https://boxerapp.com, https://github.com/alunbestor/Boxer). How a game is recognised, installed and shelved follows Boxer's own rules (see `docs/boxer-rules.md`); About Boxer says so.

@@ -9,7 +9,7 @@
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.2
+app boxerset "The Control Panel pane for Boxer" 0.3
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
 	dt_app bxfield "Shelf Folder" 9 64 "" "" fixed hidden
@@ -37,7 +37,8 @@ BX_MOUSE="${BX_MOUSE-direct}"
 BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
-command -v dt_keep > /dev/null && dt_keep BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_CARD BX_MIDIDIR BX_MIDI
+BX_ART="${BX_ART-off}"
+command -v dt_keep > /dev/null && dt_keep BX_ART BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_CARD BX_MIDIDIR BX_MIDI
 
 # follow is Control Panel > Pictures, as the wallpaper's and YouTube's are.
 BXS_PICS=(follow pixels half)
@@ -76,6 +77,10 @@ fn boxerset_rows(int w) {
 	CP[$w][$n]["kind"]=action; CP[$w][$n]["text"]="Folder${GL[ellipsis]}"
 	CP[$w][$n]["val"]="$BX_SHELF"; CP[$w][$n]["key"]=shelf
 	n=$((n + 1))
+	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Fetch Box Art"
+	CP[$w][$n]["wtype"]=bool
+	CP[$w][$n]["val"]=off; [ "$BX_ART" = on ] && CP[$w][$n]["val"]=on
+	CP[$w][$n]["key"]=art; n=$((n + 1))
 	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Display"; n=$((n + 1))
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Rendering"
 	CP[$w][$n]["val"]="$BX_PIC"; CP[$w][$n]["key"]=pic
@@ -122,6 +127,7 @@ fn boxerset_do(int? w = "", k = "", int? dir = "") {
 	fullkey) v := cp_next "$BX_FULLKEY" "$dir" "${BXS_KEYS[@]}"; BX_FULLKEY=$v ;;
 	hold) v := cp_next "$BX_HOLD" "$dir" "${BXS_HOLDS[@]}"; BX_HOLD=$v ;;
 	mouse) v := cp_next "$BX_MOUSE" "$dir" "${BXS_MICE[@]}"; BX_MOUSE=$v ;;
+	art) [ "$BX_ART" = on ] && BX_ART=off || BX_ART=on ;;
 	sound) [ "$BX_SOUND" = on ] && BX_SOUND=off || BX_SOUND=on ;;
 	card) v := cp_next "$BX_CARD" "$dir" "${BXS_CARDS[@]}"; BX_CARD=$v ;;
 	mididir) bxs_dialog midi; return 0 ;;

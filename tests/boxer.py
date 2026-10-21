@@ -14,7 +14,7 @@ CORE = ROOT + "/build/testcore.so"
 RETRO = ROOT + "/build/retro.so"
 DESK = HIBR_TREE + "/programs/desktop/desktop.hibr"
 ENVBASE = {"XDG_RUNTIME_DIR": D, "HIBR_RETRO_AUDIO": "none", "BP_CORE": CORE,
-           "BP_SYS": D + "/sys", "HIBR_MODPATH": ROOT + "/build"}
+           "BP_SYS": D + "/sys", "HIBR_MODPATH": ROOT + "/build", "XDG_CACHE_HOME": D + "/cache"}
 
 
 def gamebox(name="Test Game"):
@@ -447,7 +447,7 @@ out, err = withhome("echo \"shelf=$BX_SHELF\"")
 check("the default shelf is Dos Games in the home folder once it is there", "shelf=%s/Dos Games" % home in out, out + err)
 q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\n"
                     "declare -gA CP; boxerset_rows 40 > /dev/null\n"
-                    "for i in 0 1 2 3 4 5 6 7 8 9 10 11; do echo \"$i=${CP[40][$i][text]}|${CP[40][$i][val]}\"; done\n"
+                    "for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13; do echo \"$i=${CP[40][$i][text]}|${CP[40][$i][val]}\"; done\n"
                     "BX_SHELF=x; boxerset_do 40 mouse 1; echo \"mouse=$BX_MOUSE\"; boxerset_do 40 sound 1; echo \"sound=$BX_SOUND\""
                     % (load("console"), DESK, ROOT, HIBR_TREE + "/programs/desktop", ROOT)],
                    capture_output=True, text=True, env=dict(os.environ, HOME=home, XDG_RUNTIME_DIR=D, BX_SHELF=home + "/Dos Games"),
@@ -457,6 +457,7 @@ check("the pane lists the shelf folder, rendering, shape, full screen key, key h
       all(w in out for w in ("Folder", "Rendering", "Shape", "Full Screen Key", "Key Held", "Mouse", "Sound")), out + q.stderr)
 check("a row steps through its choices: mouse direct goes to relative, sound toggles",
       "mouse=relative" in out and "sound=off" in out, out + q.stderr)
+check("the pane has Fetch Box Art, off until it is turned on", "Fetch Box Art|off" in out, out + q.stderr)
 
 # The folder dialog in a real desktop: the field is typed into and Save makes the folder and keeps it.
 target = os.path.join(D, "My Games")
@@ -549,6 +550,104 @@ out, err = imp("mkdir -p %s/bun/X.boxer %s/bun/Y.dir; dt_isbundle %s/bun/X.boxer
                "dt_openverbs %s/bun/X.boxer; echo \"verb=${DT_OVLIST[*]}:${DT_OPENVERBS[0][label]}:${DT_OPENVERBS[0][app]}\"" % ((D,) * 5))
 check("a .boxer folder is a bundle for Boxer, and has Get Info... as a verb that opens the settings window",
       "bundle" in out and "plain" not in out and "Get Info..." in out and ":boxerinfo" in out, out + err)
+
+# About Boxer names Boxer, says this is a tribute, and gives its author and where it lives.
+pa = sx.scratch("boxerabout.hibr")
+open(pa, "w").write(
+    "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\n"
+    "dt_open\nboxer_about\ndt_run\ndt_close\n" % (load("console", "img", RETRO), DESK, ROOT, ROOT))
+t = Term(pa, rows=40, cols=100, settle=1.0, env=ENVBASE)
+t.collect(1.0)
+tx = t.screen().text()
+check("About Boxer is a tribute to Boxer, with its author and its address",
+      all(w in tx for w in ("tribute to Boxer", "Alun Bestor", "https://boxerapp.com", "github.com/alunbestor/Boxer")), t.screen())
+t.send(b"\r")
+t.collect(0.6)
+check("and Enter closes it", "tribute to Boxer" not in t.screen().text(), t.screen())
+t.close()
+
+# Box art: a cover is .cover.png in the box; one placed there wins, one beside the game is taken in, and, only when
+# Control Panel > Boxer says so, one is fetched by the game's name from a server of covers (here a local one standing in).
+import http.server, threading
+art = os.path.join(D, "art")
+os.makedirs(art)
+png(art + "/Dungeon Keeper (1997).png", 8, 8, (200, 30, 30))
+png(art + "/Leisure Suit Larry 2 - Goes looking for Love in Several Wrong Places (1988).png", 8, 8, (30, 200, 30))
+png(art + "/7th Guest, The (1993).png", 8, 8, (30, 30, 200))
+png(art + "/Prince of Persia (1990).png", 8, 8, (90, 90, 90))
+open(art + "/Broken Game (1990).png", "wb").write(b"<html>not a png at all" * 20)
+hits = []
+
+
+class H(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *a, **k):
+        super().__init__(*a, directory=art, **k)
+
+    def log_message(self, *a):
+        hits.append(self.path)
+
+
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+url = "http://127.0.0.1:%d/" % srv.server_address[1]
+ENVBASE["BX_ART_URL"] = url
+
+
+def boxnamed(n):
+    b = os.path.join(D, "art-" + n + ".boxer")
+    shutil.rmtree(b, True)
+    os.makedirs(b + "/drives/c")
+    open(b + "/gamebox.json", "w").write('{"gamebox":1,"title":"%s"}' % n)
+    return b
+
+
+def lit(path):
+    return open(path, "rb").read(8) == b"\x89PNG\r\n\x1a\n"
+
+
+m = {}
+for n in ("Dungeon Keeper", "Leisure Suit Larry 2", "The 7th Guest", "Prince of Persia 2", "Leisure Suit Larry", "Nothing Like This", "Broken Game", "LS"):
+    b = boxnamed(n)
+    out, err = imp("bc_fetch '%s'; echo \"st=$?\"" % b)
+    m[n] = (out.strip().split("st=")[-1], lit(b + "/.cover.png") if os.path.exists(b + "/.cover.png") else None)
+check("a cover is found by the game's name: the same name, with the year dropped",
+      m["Dungeon Keeper"] == ("0", True), m)
+check("a short name finds the longer title it starts: Larry 2 is the one with its subtitle", m["Leisure Suit Larry 2"] == ("0", True), m)
+check("The 7th Guest is found as 7th Guest, The", m["The 7th Guest"] == ("0", True), m)
+check("a name that is nobody's is not matched, nor is a too-short one, nor 2 taken for the first game, nor a series name for one of its games",
+      m["Nothing Like This"][0] == "1" and m["LS"][0] == "1" and m["Prince of Persia 2"][0] == "1"
+      and m["Leisure Suit Larry"][0] == "1", m)
+check("what comes back that is not a PNG is refused and nothing is kept", m["Broken Game"] == ("2", None), m)
+
+shutil.rmtree(D + "/cache", True)
+hits.clear()
+src = os.path.join(D, "artsrc", "Dungeon Keeper")
+os.makedirs(src)
+open(src + "/KEEPER.EXE", "wb").write(b"MZ" + bytes(62))
+out, err = imp("b := bx_import '%s'; echo \"box=$b\"" % src)
+bx_ = out.split("box=")[1].strip()
+check("off by default: an import fetches nothing and asks the server for nothing", not os.path.exists(bx_ + "/.cover.png") and not hits, (hits, out, err))
+
+shutil.rmtree(bx_, True)
+out, err = imp("BX_ART=on; b := bx_import '%s'; echo \"box=$b\"" % src)
+bx_ = out.split("box=")[1].strip()
+check("on: an import gives the box its cover, fetched by name", os.path.exists(bx_ + "/.cover.png") and lit(bx_ + "/.cover.png"), (out, err))
+
+shutil.rmtree(bx_, True)
+png(src + "/cover.png", 4, 4, (1, 2, 3))
+hits.clear()
+out, err = imp("BX_ART=on; b := bx_import '%s'; echo \"box=$b\"" % src)
+bx_ = out.split("box=")[1].strip()
+check("a cover that came with the game is the one kept, and nothing is fetched for it",
+      os.path.exists(bx_ + "/.cover.png") and open(bx_ + "/.cover.png", "rb").read() == open(src + "/cover.png", "rb").read() and not hits, (hits, out, err))
+
+png(D + "/mine.png", 4, 4, (9, 9, 9))
+out, err = imp("bc_set '%s' '%s'; echo st=$?" % (bx_, D + "/mine.png"))
+check("a cover of the person's own is put in as .cover.png", open(bx_ + "/.cover.png", "rb").read() == open(D + "/mine.png", "rb").read(), (out, err))
+open(D + "/mine.jpg", "wb").write(b"\xff\xd8\xff\xe0" + bytes(300))
+out, err = imp("bc_set '%s' '%s'; echo st=$?" % (bx_, D + "/mine.jpg"))
+check("a JPEG is turned away: a cover must be a PNG", "st=1" in out and "must be a PNG" in err, (out, err))
+srv.shutdown()
 
 shutil.rmtree(D, True)
 report()

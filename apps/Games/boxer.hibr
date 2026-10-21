@@ -2,7 +2,7 @@
 #
 # boxer -- a shelf of DOS games, one box to a game, in the way Boxer shelves
 # them on a Mac. A game lives in a folder of its own, NAME.boxer, holding
-# the game's drive C, its box art (cover.png), the person's DOSBox settings
+# the game's drive C, its box art (.cover.png), the person's DOSBox settings
 # and the game's saves; the shelf is a folder of them, and this window shows
 # it as a grid of covers. Clicking one selects it, a double click or Enter
 # plays it, in a window of its own (boxerplay).
@@ -12,16 +12,17 @@
 # out is gone. The default shelf is ~/Dos Games, and Control Panel > Boxer
 # (or BX_SHELF) names another.
 #
-# A game with no cover.png gets a tile of its own, coloured from its name.
+# A game with no cover gets a tile of its own, coloured from its name.
 
 strict
 
 
-app boxer "DOS games on a shelf" 0.7
+app boxer "DOS games on a shelf" 0.8
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
 command -v dt_app > /dev/null && dt_app boxer "Boxer" 40 100 "" "▣"
+command -v dt_app > /dev/null && dt_app boxerabout "About Boxer" 17 68 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxerinfo "Game Settings" 17 60 "" "" fixed hidden
 command -v dt_keepstate > /dev/null && dt_keepstate boxer BX
 command -v dt_opener > /dev/null && dt_opener boxerplay "Boxer" "boxer" app boxerplay dir
@@ -174,6 +175,170 @@ fn bx_dosify(root) {
 	return 0
 }
 
+# --- box art --------------------------------------------------------------------
+#
+# A box's cover is .cover.png in it (cover.png is read too): the person's own
+# when they put one there, else, when Control Panel > Boxer says to fetch
+# box art, the libretro thumbnails project's picture for the game's name
+# (https://thumbnails.libretro.com/DOS/Named_Boxarts/). Fetching sends the
+# game's name to that server, so it is off until it is turned on; a cover that
+# is already there is never replaced. What comes back is checked to be a
+# PNG of a sane size before it is kept.
+
+BX_ART="${BX_ART-off}"
+command -v dt_keep > /dev/null && dt_keep BX_ART
+
+# The cover a box has, or nothing.
+fn bc_path(box) {
+	local f
+
+	for f in "$box/.cover.png" "$box/cover.png"; do
+		[ -r "$f" ] && { ret "$f"; return 0; }
+	done
+	return 1
+}
+
+# Where the list of names is kept, and where it is fetched from.
+fn bc_cache() {
+	ret "${XDG_CACHE_HOME:-$HOME/.cache}/hibr/boxer"
+}
+
+fn bc_url() {
+	ret "${BX_ART_URL:-https://thumbnails.libretro.com/DOS/Named_Boxarts/}"
+}
+
+# The server's list of covers as a file of "name<TAB>encoded name" lines, made
+# when there is none or the one there is over a month old.
+fn bc_list() {
+	local dir lst raw f n url
+
+	dir := bc_cache
+	url := bc_url
+	lst="$dir/dos-boxarts.lst"
+	if [ -s "$lst" ] && [ -z "$(find "$lst" -mtime +30 2> /dev/null)" ]; then
+		ret "$lst"
+		return 0
+	fi
+	mkdir -p "$dir" || return 1
+	raw="$lst.part"
+	bc_get "$url" "$raw" 4000000 || { command rm -f -- "$raw"; return 1; }
+	grep -o 'href="[^"]*\.png"' "$raw" | sed -e 's/^href="//' -e 's/"$//' -e 's/&amp;/\&/g' > "$raw.enc"
+	[ -s "$raw.enc" ] || { command rm -f -- "$raw" "$raw.enc"; return 1; }
+	: > "$raw.dec"
+	while IFS= read -r f; do
+		n=${f//\\/%5C}
+		printf '%b\n' "${n//%/\\x}" >> "$raw.dec"
+	done < "$raw.enc"
+	paste -d '\t' "$raw.dec" "$raw.enc" > "$lst"
+	command rm -f -- "$raw" "$raw.enc" "$raw.dec"
+	ret "$lst"
+}
+
+# One download, to a file, from a server over https (http only when the place
+# to fetch from was named by hand), no bigger than max bytes.
+fn bc_get(url, out, int max) {
+	local pr='=https'
+
+	[ -n "${BX_ART_URL-}" ] && pr='=http,https'
+	command -v curl > /dev/null || return 1
+	curl -fsSL --proto "$pr" --proto-redir "$pr" --max-time 30 --max-filesize "$max" -o "$out" -- "$url" 2> /dev/null
+}
+
+# Which of the listed covers is the game's: the names are compared lower case,
+# without the (year), the punctuation, or a ", The" at the end. The same name
+# wins; failing that, for a game whose name ends in a number ("Larry 2"), the
+# shortest name that starts with it, which is the one with its subtitle. A
+# series name alone is not guessed at, a wrong cover being worse than none.
+# Gives the encoded file name, or nothing.
+fn bc_match(title, lst) {
+	local r
+
+	r=$(awk -F '\t' -v t="$title" '
+	function norm(s,   x) {
+		x = tolower(s)
+		sub(/\.png$/, "", x)
+		gsub(/\([^)]*\)/, " ", x)
+		gsub(/\[[^]]*\]/, " ", x)
+		gsub(/[ \t]+$/, "", x)
+		if (match(x, /, (the|a|an)$/)) x = substr(x, RSTART + 2) " " substr(x, 1, RSTART - 1)
+		gsub(/[^a-z0-9]+/, " ", x)
+		gsub(/^ +| +$/, "", x)
+		return x
+	}
+	BEGIN { q = norm(t); best = ""; bs = 1e9; numbered = (q ~ / ([0-9]+|[ivx]+)$/) }
+	q == "" || length(q) < 3 { next }
+	{
+		n = norm($1)
+		if (n == q) s = 0
+		else if (numbered && index(n, q " ") == 1) s = 1 + length(n)
+		else next
+		if ($1 ~ /\(1[0-9][0-9][0-9]\)|\(20[0-9][0-9]\)/) s -= 0.5
+		if (s < bs) { bs = s; best = $2 }
+	}
+	END { if (best != "") print best }' "$lst")
+	ret "$r"
+}
+
+# Fetch a box's cover into it as .cover.png, whatever BX_ART says. Status 1
+# when there is none to be had, 2 when one came back that was not a PNG.
+fn bc_fetch(box) {
+	local lst title enc tmp magic url
+
+	lst := bc_list || return 1
+	url := bc_url
+	json parse BXJ "$(< "$box/gamebox.json")" 2> /dev/null || return 1
+	title := bp_get BXJ .title "${box##*/}"
+	title=${title%.boxer}
+	enc := bc_match "$title" "$lst"
+	[ -n "$enc" ] || return 1
+	tmp="$box/.cover.png.part"
+	bc_get "$url$enc" "$tmp" 8000000 || { command rm -f -- "$tmp"; return 1; }
+	magic=$(head -c 8 "$tmp" | od -An -tx1 | tr -d ' \n')
+	if [ "$magic" != 89504e470d0a1a0a ] || [ "$(stat -c %s "$tmp")" -lt 60 ]; then
+		command rm -f -- "$tmp"
+		return 2
+	fi
+	command mv -f -- "$tmp" "$box/.cover.png"
+	return 0
+}
+
+# Put a picture of the person's own in as a box's cover. A PNG only.
+fn bc_set(box, pic) {
+	local magic
+
+	[ -r "$pic" ] || { echo "boxer: no such file: $pic" >&2; return 1; }
+	magic=$(head -c 8 "$pic" | od -An -tx1 | tr -d ' \n')
+	[ "$magic" = 89504e470d0a1a0a ] || { echo "boxer: a cover must be a PNG: $pic" >&2; return 1; }
+	command cp -f -- "$pic" "$box/.cover.png"
+}
+
+# After an import: a cover the game came with or sat beside, else, when it is
+# switched on, the one fetched. src is what was imported.
+fn bc_auto(box, src) {
+	local d f n
+
+	[ -n "$(bc_path "$box")" ] && return 0
+	d=${src%/}
+	[ -d "$d" ] || d=${d%/*}
+	n=${src%/}
+	n=${n##*/}
+	n=${n%.*}
+	for f in "$d/.cover.png" "$d/cover.png" "$d/$n.png" "$src/cover.png"; do
+		[ -f "$f" ] && bc_set "$box" "$f" 2> /dev/null && return 0
+	done
+	[ "$BX_ART" = on ] && bc_fetch "$box"
+	return 0
+}
+
+# Make a gamebox, then give it its cover.
+fn bx_import(src, title = "", mode = auto) {
+	local box
+
+	box := bx_import_box "$src" "$title" "$mode" || return 1
+	bc_auto "$box" "$src"
+	ret "$box"
+}
+
 # Make a gamebox on the shelf from src -- a folder, an archive, a CD image or
 # a lone program -- the way Boxer does, and say where it is.
 #
@@ -183,7 +348,7 @@ fn bx_dosify(root) {
 # on C: is the game and the CD is kept. A game with no installer, or one that
 # says it is installed, is copied into C:. mode is auto, install or installed
 # to say which.
-fn bx_import(src, title = "", mode = auto) {
+fn bx_import_box(src, title = "", mode = auto) {
 	local base name box work tmp= iso=0 found
 
 	[ -e "$src" ] || { echo "boxer: no such file or folder: $src" >&2; return 1; }
@@ -368,11 +533,12 @@ fn bx_card(int id, int r, int c, title, tint) {
 # One tile at row r, column c: the cover, then the title, which is shown as
 # selected when it is.
 fn bx_tile(int id, int i, int r, int c) {
-	local box=${BX[$id]["box$i"]} t=${BX[$id]["ttl$i"]}
+	local box=${BX[$id]["box$i"]} t=${BX[$id]["ttl$i"]} cv
 
-	if [ -r "$box/cover.png" ] && dt_has img; then
+	cv := bc_path "$box" || cv=
+	if [ -n "$cv" ] && dt_has img; then
 		dt_imgm
-		img draw "$box/cover.png" "$r" "$c" $((BX_TH - 3)) $((BX_TW - 2)) \
+		img draw "$cv" "$r" "$c" $((BX_TH - 3)) $((BX_TW - 2)) \
 			"${DT_IMGARG[@]}" -p "w$id" 2> /dev/null || bx_card "$id" "$r" "$c" "$t" "${BX[$id]["tint$i"]}"
 	else
 		bx_card "$id" "$r" "$c" "$t" "${BX[$id]["tint$i"]}"
@@ -862,8 +1028,25 @@ fn boxer_context(int id) {
 	dt_item "Get Info${GL[ellipsis]}" i bx_getinfo "$id"
 	bx_info_loadbox "$id" "${BX[$id]["box${BX[$id]["sel"]:-0}"]-}"
 	[ "$(bp_state_of "${BX[$id]["ibox"]-}")" = installing ] && dt_item "Game Is Already Installed" a bx_installed "$id"
+	dt_item "Fetch Cover" c bx_fetchcover "$id"
 	dt_sep
 	dt_item "Show in Files" f bx_reveal "$id"
+}
+
+# Fetch the selected game's cover from the internet, asked for by name.
+fn bx_fetchcover(int id) {
+	local k=${BX[$id]["sel"]:-0} box st
+
+	box=${BX[$id]["box$k"]-}
+	[ -n "$box" ] || return 0
+	bc_fetch "$box"
+	st=$?
+	case $st in
+	0) bx_scan "$id"; dt_notep low "Cover found for ${BX[$id]["ttl$k"]}" ;;
+	2) dt_notep high "What came back was not a PNG, so it was not kept" ;;
+	*) dt_notep low "No cover found for ${BX[$id]["ttl$k"]}, or it could not be fetched" ;;
+	esac
+	return 0
 }
 
 # Open the game's settings in a window of their own.
@@ -884,6 +1067,53 @@ fn bx_reveal(int id) {
 
 	[ -n "$box" ] || return 0
 	dt_launch files "${box%/*}" > /dev/null
+	return 0
+}
+
+# --- About -----------------------------------------------------------------------
+
+# About Boxer: what this is a tribute to, and whose it is.
+fn boxer_about() {
+	local h=17 w=68 rid
+
+	dt_dlgat "$h" "$w"
+	rid := dt_new "About Boxer" "$DT_DLGH" "$DT_DLGW" "$DT_DLGR" "$DT_DLGC" boxerabout
+	return 0
+}
+
+fn boxerabout_draw(int id, int h, int w, int row, int col) {
+	local i=2 l
+	local -a lines=(
+		"Boxer for hibr"
+		""
+		"A tribute to Boxer, the DOS game box for the Mac, by Alun Bestor,"
+		"who made playing old DOS games as easy as keeping them on a shelf."
+		"  https://boxerapp.com"
+		"  https://github.com/alunbestor/Boxer"
+		""
+		"How a game is recognised, installed and shelved here follows Boxer's"
+		"own rules, read from its source (GPL-2.0, Alun Bestor and contributors)."
+		""
+		"Games run in DOSBox Pure, a libretro core. Box art, when fetching is on,"
+		"comes from the libretro thumbnails project."
+	)
+
+	dt_wclear "$id"
+	for l in "${lines[@]}"; do
+		if [ "$i" = 2 ]; then console pen "$DT_INK" "$DT_FACE" bold; else console pen "$DT_INK" "$DT_FACE"; fi
+		dt_tput "$id" "$i" 2 "$l"
+		i=$((i + 1))
+	done
+	dt_dlgbtns "$id" "$h" "$w" ok ok OK
+}
+
+fn boxerabout_key(int id, key) {
+	case $key in enter | escape | " ") dt_del "$id" ;; esac
+	return 0
+}
+
+fn boxerabout_click(int id, int r, int c, btn = "") {
+	[ "$(dt_hit "$id" "$r" "$c")" = ok ] && dt_del "$id"
 	return 0
 }
 
@@ -956,6 +1186,20 @@ if [ -z "${DT_ROWS-}" ]; then
 			--installed) mode=installed; continue ;;
 			esac
 			b := bx_import "$p" "" "$mode" && echo "$b"
+		done
+		;;
+	cover)
+		shift
+		b=${1-}
+		[ -r "$b/gamebox.json" ] || { echo "boxer: cover BOX [PNG|fetch]" >&2; exit 1; }
+		case ${2-fetch} in
+		fetch) bc_fetch "$b" || { echo "boxer: no cover found for ${b##*/}" >&2; exit 1; } ;;
+		*) bc_set "$b" "$2" || exit 1 ;;
+		esac
+		;;
+	covers)
+		for b in "$BX_SHELF"/*.boxer; do
+			[ -d "$b" ] && [ -z "$(bc_path "$b")" ] && bc_fetch "$b" && echo "$b"
 		done
 		;;
 	fix)
