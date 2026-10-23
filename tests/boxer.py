@@ -33,13 +33,13 @@ def gamebox(name="Test Game"):
     return b
 
 
-def desk(body, box, pix=False, env=None):
+def desk(body, box, pix=False, env=None, caps=None):
     p = sx.scratch("boxer.hibr")
     open(p, "w").write(
         "%s. %s\n. %s/apps/boxerplay.hibr\n"
         "dt_open\nBID := dt_launch boxerplay \"%s\"\n%s\ndt_run\ndt_close\n"
         % (load("console", RETRO), DESK, ROOT, box, body))
-    kw = dict(cellw=8, cellh=16, caps=["kitty"]) if pix else {}
+    kw = dict(cellw=8, cellh=16, caps=["kitty"]) if pix else dict(cellw=8, cellh=16, caps=caps) if caps else {}
     return Term(p, rows=26, cols=82, settle=1.0, env=dict(ENVBASE, **(env or {})), **kw)
 
 
@@ -340,6 +340,34 @@ if dbp and os.path.exists(dbp):
             got = [x for x in cells(t.screen()) if not (x[0] <= 5 and x[1] <= 14)]
             check("a click at row %d, column %d in an offset, resized window puts DOS's pointer there: %s" % (pr, pc, got[:2]),
                   bool(got) and abs(got[0][0] - pr) <= 2 and abs(got[0][1] - pc) <= 2, got[:3])
+        t.close()
+        # With hovering on, the pointer needs no button: motion alone puts DOS's pointer under it.
+        t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', pb, False, {"BP_CORE": dbp, "DT_HOVER": "on"})
+        for _ in range(40):
+            t.collect(0.25)
+            if "▀" in t.screen().text():
+                break
+        t.collect(5.0)
+        t.send(b"\x1b[<35;%d;%dM" % (45 + 1, 14 + 1))
+        t.collect(1.5)
+        got = [x for x in cells(t.screen()) if not (x[0] <= 5 and x[1] <= 14)]
+        check("the pointer moving with no button down puts DOS's pointer there: %s" % (got[:2],),
+              bool(got) and abs(got[0][0] - 14) <= 2 and abs(got[0][1] - 45) <= 2, got[:3])
+        t.close()
+        # A terminal that reports the pointer in pixels (hovering Auto turns on by itself): the pixel is turned into
+        # a place over the picture, and DOS's pointer lands in the cell the pixel is in, not one over.
+        t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', pb, False, {"BP_CORE": dbp}, ["mpix"])
+        for _ in range(40):
+            t.collect(0.25)
+            if "▀" in t.screen().text():
+                break
+        t.collect(5.0)
+        for (pr, pc) in ((14, 45), (9, 20)):
+            t.send(b"\x1b[<35;%d;%dM" % (pc * 8 + 5, pr * 16 + 9))
+            t.collect(1.5)
+            got = [x for x in cells(t.screen()) if not (x[0] <= 5 and x[1] <= 14)]
+            check("a pointer reported in pixels at row %d, column %d (hover Auto) puts DOS's pointer in that cell: %s" % (pr, pc, got[:1]),
+                  bool(got) and abs(got[0][0] - pr) <= 1 and abs(got[0][1] - pc) <= 1, got[:3])
         t.close()
         # The installer, on the real core: a game with an installer is set up to run it from D:, the installer puts a
         # file on C:, and closing the window finishes the install: the game is installed, its programs found.

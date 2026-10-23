@@ -25,7 +25,7 @@ retro close $id
 | `size ID COLS ROWS [pixels\|half]`, `aspect ID 4:3\|auto\|RATIO` | the cells it fills, and the shape of the picture in them |
 | `draw ID ROW COL [-p PANE]` | the latest frame, its shape kept, in the rectangle |
 | `key ID NAME [down\|up\|tap]` | a key by the console's name. `tap`, the default, holds it for `hold` ms after each report, since a terminal sends no key release (hibr #315) |
-| `hold ID MS`, `mouse ID ROW COL BUTTONS [WHEEL]`, `pad ID MASK` | the hold time; the pointer at a cell over the picture, counted as `draw` counts them (in the pane when it was given `-p`, else on the screen), buttons 1 left 2 right 4 middle; the joypad |
+| `hold ID MS`, `mouse ID ROW COL BUTTONS [WHEEL]`, `pad ID MASK` | the hold time; the pointer at a cell over the picture (a whole number is the middle of the cell, `12.25` a quarter across it, which is how a pointer reported in pixels is passed), counted as `draw` counts them (in the pane when it was given `-p`, else on the screen), buttons 1 left 2 right 4 middle; the joypad |
 | `pause`, `play`, `toggle`, `reset ID`, `option ID KEY VALUE`, `save ID FILE`, `load ID FILE` | |
 | `info ID` | a map, or `name<TAB>value` lines |
 

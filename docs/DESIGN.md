@@ -330,8 +330,24 @@ stale hover reports. The plan is therefore: only the focused game window asks,
 only while focused, with reports coalesced against `console waiting`.
 ScummVM's point-and-click wants this; DOS games with a mouse want it too.
 
-Both are changes in `itdlabs/hibr`, are prerequisites for "double-click and it
-plays", and are filed there: **#315** (key release) and **#316** (hover).
+Both are changes in `itdlabs/hibr`: **#315** (key release) and **#316** (hover).
+Hover shipped as hibr 0.99.304 (#370): the desktop hears the pointer with no
+button down where the display reports it in pixels (Control Panel > Mouse >
+Hover, Auto), and tells a window's `_hover` the cell, with the pixel in
+`DT_PX`/`DT_PY`.
+
+**The mouse degrades in steps**, each the one above less something, none needing
+a setting:
+
+1. Pixels and hover (Blit, kitty, foot): DOS's pointer follows every move, to
+   the part of a cell it is over (`retro mouse` takes `12.25`).
+2. Hover, cells only (Hover set On): the same, a cell at a time.
+3. No hover: DOS's pointer follows a press and a drag, as before.
+4. An older `retro` module takes the whole cell of a fractional position, and an
+   older hibr never calls `_hover`: steps 2 and 3.
+
+Not yet: hiding the pointer over the game, or confining it. The console has no
+command for it, so Capture Mouse says which step the session is on.
 
 **Frame cost.** ADR 0037 measured film frames: half blocks 0.5 ms / 14 kB at
 100x34 cells, sixel 23 ms / 34 kB, kitty 6.8 ms / 351 kB at half resolution.

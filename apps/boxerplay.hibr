@@ -21,12 +21,12 @@
 #
 # What it cannot do yet: a key's release (the console reports presses only,
 # so a key is held for a short time after each press; hibr #315), and
-# pointer position without a button (#316).
+# the mouse's movement as distance, which a terminal cannot give.
 
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.6
+app boxerplay "A DOS game from a gamebox" 0.7
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -416,11 +416,11 @@ fn bp_get(doc, path, def = "") {
 }
 
 # How the mouse reaches DOS, as DOSBox Pure's own setting for it. The
-# terminal tells a position only while a button is down, so a mouse that
-# moves by itself cannot be had: direct puts DOS's pointer where the
-# terminal's is, which is what a point-and-click game wants; relative moves
-# it by the distance between presses, for a game that wants that and will
-# do little; off hands DOS none.
+# terminal tells a position with no button down only where the desktop's
+# hovering is on, which is Auto on a display that reports the pointer in pixels:
+# direct puts DOS's pointer where the terminal's is, which is what a
+# point-and-click game wants; relative moves it by the distance between
+# presses, for a game that wants that and will do little; off hands DOS none.
 fn bp_mousemode(m) {
 	case $m in
 	relative) ret virtual ;;
@@ -755,18 +755,55 @@ fn boxerplay_key(int id, key) {
 	return 0
 }
 
-# The pointer follows a press and a drag; with no button down there is
-# nothing to follow (hibr #316).
+# Where the pointer is over the window, as the row and column retro mouse takes:
+# the cell the desktop named, or, when the terminal told the pointer's pixel and
+# the cell's size is known, that cell and the part of it the pointer is over.
+fn bp_at(int id, int r, int c) {
+	local g gk cw ch wr wc
+
+	if [ -n "${DT_PX-}" ] && g := console gfx 2> /dev/null; then
+		read -r gk cw ch <<< "$g"
+		wr=${DT[$id]["row"]}
+		wc=${DT[$id]["col"]}
+		if [ "${cw:-0}" -gt 1 ] && [ "${ch:-0}" -gt 1 ] &&
+		   [ "$DT_PX" -ge $((wc * cw)) ] && [ "$DT_PY" -ge $((wr * ch)) ]; then
+			r=$(((DT_PY - wr * ch) * 1000 / ch))
+			c=$(((DT_PX - wc * cw) * 1000 / cw))
+			printf -v r '%d.%03d' $((r / 1000)) $((r % 1000))
+			printf -v c '%d.%03d' $((c / 1000)) $((c % 1000))
+		fi
+	fi
+	ret "$r $c"
+}
+
+# The pointer follows every move the desktop reports: with hovering on that is
+# all of them, and without it only those with a button down.
 fn boxerplay_mouse(int id, act, btn, int r, int c, mods = "") {
-	local p=${BP[$id]["p"]} b=1
+	local p=${BP[$id]["p"]} b=1 at ar ac
 
 	[ -n "$p" ] || return 0
 	case $btn in middle) b=4 ;; right) b=2 ;; esac
+	at := bp_at "$id" "$r" "$c"
+	read -r ar ac <<< "$at"
 	case ${act##*-} in
-	move | hover) retro mouse "$p" "$r" "$c" "${BP[$id]["btn"]:-0}" ;;
-	press | drag) BP[$id]["btn"]=$b; retro mouse "$p" "$r" "$c" "$b" ;;
-	release) BP[$id]["btn"]=0; retro mouse "$p" "$r" "$c" 0 ;;
+	move | hover) retro mouse "$p" "$ar" "$ac" "${BP[$id]["btn"]:-0}" ;;
+	press | drag) BP[$id]["btn"]=$b; retro mouse "$p" "$ar" "$ac" "$b" ;;
+	release) BP[$id]["btn"]=0; retro mouse "$p" "$ar" "$ac" 0 ;;
 	esac
+	return 0
+}
+
+# The pointer over the window with no button down, once the desktop has hovering
+# on (hibr 0.99.304): DOS's pointer goes where it is. The desktop says -1 -1 when
+# the pointer leaves, and DOS's pointer stays where it was.
+fn boxerplay_hover(int id, int r, int c) {
+	local p=${BP[$id]["p"]-} at ar ac
+
+	[ -n "$p" ] && [ "$r" -ge 0 ] || return 0
+	[ -z "${BP[$id]["choose"]-}" ] || return 0
+	at := bp_at "$id" "$r" "$c"
+	read -r ar ac <<< "$at"
+	retro mouse "$p" "$ar" "$ac" "${BP[$id]["btn"]:-0}"
 	return 0
 }
 
@@ -811,9 +848,9 @@ fn bp_toggle(int id) {
 	return 0
 }
 
-# Capture the mouse for the game: the desktop reports the pointer's every move,
-# not only while a button is down, and a key gives it back. That is the
-# desktop's to offer (hibr #316); until it does, say so rather than do nothing.
+# Capture the mouse for the game, where the desktop offers it. Where hovering
+# is on the pointer already follows every move, which is all a point-and-click
+# game wants, so there is nothing to capture; where it is off, say how to turn it on.
 fn bp_grab(int id) {
 	if dt_has dt_mousegrab; then
 		if [ "${BP[$id]["grab"]-}" = 1 ]; then
@@ -823,8 +860,10 @@ fn bp_grab(int id) {
 			dt_mousegrab "$id" on
 			BP[$id]["grab"]=1
 		fi
+	elif dt_has dt_hoveron && dt_hoveron; then
+		dt_notep low "The pointer already follows the mouse over this window"
 	else
-		dt_notep low "Capturing the mouse needs a newer hibr (Gitea #316)"
+		dt_notep low "Turn on Control Panel > Mouse > Hover and the pointer follows the mouse"
 	fi
 	return 0
 }

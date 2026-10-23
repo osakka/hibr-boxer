@@ -399,6 +399,14 @@ int rt_info(sh *s, rt_pl *p)
 	return HIBR_OK;
 }
 
+/* A cell as written: 12 is the middle of cell 12, and 12.25 is a quarter of the way across it. */
+double rt_cell(const char *s)
+{
+	double v = strtod(s, 0);
+
+	return strchr(s, '.') ? v : v + 0.5;
+}
+
 /* The usage line. */
 void rt_usage(void)
 {
@@ -599,22 +607,23 @@ int m_retro(sh *s, int ac, char **av)
 		return HIBR_OK;
 	}
 	if (!strcmp(sub, "mouse")) {
-		int row, col, x, y, btn, wheel;
+		int x, y, btn, wheel;
+		double row, col;
 
 		if (ac < 6) {
 			rt_usage();
 			return 2;
 		}
-		row = atoi(av[3]);
-		col = atoi(av[4]);
+		row = rt_cell(av[3]);
+		col = rt_cell(av[4]);
 		btn = atoi(av[5]);
 		wheel = ac > 6 ? atoi(av[6]) : 0;
 		if (p->tw < 1 || p->th < 1) {
 			x = 0;
 			y = 0;
 		} else {
-			x = (int)(((col + p->pc - p->ocol + 0.5) / p->tw) * 65534 - 32767);
-			y = (int)(((row + p->pr - p->orow + 0.5) / p->th) * 65534 - 32767);
+			x = (int)(((col + p->pc - p->ocol) / p->tw) * 65534 - 32767);
+			y = (int)(((row + p->pr - p->orow) / p->th) * 65534 - 32767);
 			x = x < -32767 ? -32767 : x > 32767 ? 32767 : x;
 			y = y < -32767 ? -32767 : y > 32767 ? 32767 : y;
 		}
