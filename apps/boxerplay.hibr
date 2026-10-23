@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.7
+app boxerplay "A DOS game from a gamebox" 0.8
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -862,6 +862,8 @@ fn bp_grab(int id) {
 		fi
 	elif dt_has dt_hoveron && dt_hoveron; then
 		dt_notep low "The pointer already follows the mouse over this window"
+	elif [ "${DT_HOVER-auto}" = auto ]; then
+		dt_notep low "Hover is Auto, and this terminal does not report the pointer in pixels; set Control Panel > Mouse > Hover to On to try it"
 	else
 		dt_notep low "Turn on Control Panel > Mouse > Hover and the pointer follows the mouse"
 	fi
