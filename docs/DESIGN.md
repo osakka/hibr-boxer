@@ -346,8 +346,8 @@ a setting:
 4. An older `retro` module takes the whole cell of a fractional position, and an
    older hibr never calls `_hover`: steps 2 and 3.
 
-Not yet: hiding the pointer over the game, or confining it. The console has no
-command for it, so Capture Mouse says which step the session is on.
+Hiding the pointer over the game is asked of the desktop (`dt_pointer`, hibr 0.99.311, #373) and is a no-op where it cannot be done. Confining it is not offered.
+Capture Mouse says which step the session is on.
 
 **Frame cost.** ADR 0037 measured film frames: half blocks 0.5 ms / 14 kB at
 100x34 cells, sixel 23 ms / 34 kB, kitty 6.8 ms / 351 kB at half resolution.

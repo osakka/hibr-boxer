@@ -33,12 +33,12 @@ def gamebox(name="Test Game"):
     return b
 
 
-def desk(body, box, pix=False, env=None, caps=None):
+def desk(body, box, pix=False, env=None, caps=None, pre=""):
     p = sx.scratch("boxer.hibr")
     open(p, "w").write(
         "%s. %s\n. %s/apps/boxerplay.hibr\n"
-        "dt_open\nBID := dt_launch boxerplay \"%s\"\n%s\ndt_run\ndt_close\n"
-        % (load("console", RETRO), DESK, ROOT, box, body))
+        "dt_open\n%s\nBID := dt_launch boxerplay \"%s\"\n%s\ndt_run\ndt_close\n"
+        % (load("console", RETRO), DESK, ROOT, pre, box, body))
     kw = dict(cellw=8, cellh=16, caps=["kitty"]) if pix else dict(cellw=8, cellh=16, caps=caps) if caps else {}
     return Term(p, rows=26, cols=82, settle=1.0, env=dict(ENVBASE, **(env or {})), **kw)
 
@@ -342,7 +342,8 @@ if dbp and os.path.exists(dbp):
                   bool(got) and abs(got[0][0] - pr) <= 2 and abs(got[0][1] - pc) <= 2, got[:3])
         t.close()
         # With hovering on, the pointer needs no button: motion alone puts DOS's pointer under it.
-        t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', pb, False, {"BP_CORE": dbp, "DT_HOVER": "on"})
+        t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', pb, False, {"BP_CORE": dbp, "DT_HOVER": "on"}, None,
+                 'fn dt_pointer(int id, shape = "") { echo "$id:$shape" >> %s/ptr; DT[$id]["ptr"]=$shape; }' % D)
         for _ in range(40):
             t.collect(0.25)
             if "▀" in t.screen().text():
@@ -353,6 +354,8 @@ if dbp and os.path.exists(dbp):
         got = [x for x in cells(t.screen()) if not (x[0] <= 5 and x[1] <= 14)]
         check("the pointer moving with no button down puts DOS's pointer there: %s" % (got[:2],),
               bool(got) and abs(got[0][0] - 14) <= 2 and abs(got[0][1] - 45) <= 2, got[:3])
+        check("a playing game window asks the desktop to hide the terminal's pointer over it: %s" % (open(D + "/ptr").read() if os.path.exists(D + "/ptr") else "no request"),
+              os.path.exists(D + "/ptr") and ":none" in open(D + "/ptr").read(), "")
         t.close()
         # A terminal that reports the pointer in pixels (hovering Auto turns on by itself): the pixel is turned into
         # a place over the picture, and DOS's pointer lands in the cell the pixel is in, not one over.

@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.8
+app boxerplay "A DOS game from a gamebox" 0.9
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -579,6 +579,8 @@ fn bp_start(int id) {
 	command -v console > /dev/null && console watch "${BP[$id]["fd"]}"
 	BP[$id]["t0"]=$EPOCHSECONDS
 	dt_retitle "$id" "${BP[$id]["name"]}"
+	dt_has dt_pointer && dt_pointer "$id" none
+	return 0
 }
 
 
