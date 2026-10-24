@@ -475,6 +475,15 @@ check("a Voodoo memory and speed are passed as the core's options", got == "[dos
 got = voo('{"boxer":1,"voodoo":"off"}')
 check("Voodoo off is passed as off", got == "[dosbox_pure_voodoo=off]", got)
 
+# The pane's MIDI Output dropdown lists the same synths, with the player loaded as it is in the desktop.
+q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\n"
+                    ". %s/apps/boxerplay.hibr\nBX_MIDIDIR=%s\nm := bxs_midis; echo \"[$m]\""
+                    % (load("console", RETRO), DESK, ROOT, HIBR_TREE + "/programs/desktop", ROOT + "", ROOT, md)],
+                   capture_output=True, text=True, env=dict(os.environ, **ENVBASE), timeout=60)
+check("the MIDI Output dropdown offers disabled and each synth in the folder",
+      "[disabled MT32_CONTROL.ROM ROM1.BIN gm.sf2]" in q.stdout or ("MT32_CONTROL.ROM" in q.stdout and "gm.sf2" in q.stdout and "disabled" in q.stdout),
+      q.stdout + q.stderr)
+
 # A game with several programs and none chosen asks which to run, in its own window, and remembers the answer.
 csh = os.path.join(D, "chooser")
 os.makedirs(csh)

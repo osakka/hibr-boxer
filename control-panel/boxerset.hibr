@@ -9,7 +9,7 @@
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.4
+app boxerset "The Control Panel pane for Boxer" 0.5
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
 	dt_app bxfield "Games Folder" 9 64 "" "" fixed hidden
@@ -59,6 +59,7 @@ fn cp_set_bxmidi(int? id = "", value = "") { BX_MIDI=$value; cp_save; }
 
 # The MIDI outputs on offer: none, and whatever synths the folder holds.
 fn bxs_midis() {
+	local f
 	local l
 
 	l=disabled
