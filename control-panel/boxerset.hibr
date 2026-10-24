@@ -9,7 +9,7 @@
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.5
+app boxerset "The Control Panel pane for Boxer" 0.6
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
 	dt_app bxfield "Games Folder" 9 64 "" "" fixed hidden
@@ -34,11 +34,13 @@ BX_FULLKEY="${BX_FULLKEY-alt-enter}"
 BX_HOLD="${BX_HOLD-120}"
 BX_SOUND="${BX_SOUND-on}"
 BX_MOUSE="${BX_MOUSE-direct}"
+BX_CAPTURE="${BX_CAPTURE-click}"
+BX_RELKEY="${BX_RELKEY-f12}"
 BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
 BX_ART="${BX_ART-off}"
-command -v dt_keep > /dev/null && dt_keep BX_ART BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_CARD BX_MIDIDIR BX_MIDI
+command -v dt_keep > /dev/null && dt_keep BX_ART BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_CAPTURE BX_RELKEY BX_CARD BX_MIDIDIR BX_MIDI
 
 # follow is Control Panel > Pictures, as the wallpaper's and YouTube's are.
 BXS_PICS=(follow pixels half)
@@ -46,6 +48,8 @@ BXS_ASPECTS=(4:3 auto 16:10 16:9 1:1)
 BXS_KEYS=(alt-enter f11 f12 ctrl-f none)
 BXS_HOLDS=(60 120 200 300 500)
 BXS_MICE=(direct relative off)
+BXS_CAPS=(click seamless)
+BXS_RELKEYS=(f12 ctrl-f10 f11 f10)
 BXS_CARDS=(sb16 sbpro2 sb1 none)
 declare -gA BXF
 
@@ -54,6 +58,8 @@ fn cp_set_bxaspect(int? id = "", value = "") { BX_ASPECT=$value; cp_save; }
 fn cp_set_bxkey(int? id = "", value = "") { BX_FULLKEY=$value; cp_save; }
 fn cp_set_bxhold(int? id = "", value = "") { BX_HOLD=$value; cp_save; }
 fn cp_set_bxmouse(int? id = "", value = "") { BX_MOUSE=$value; cp_save; }
+fn cp_set_bxrel(int? id = "", value = "") { BX_RELKEY=$value; cp_save; }
+fn cp_set_bxcap(int? id = "", value = "") { BX_CAPTURE=$value; cp_save; }
 fn cp_set_bxcard(int? id = "", value = "") { BX_CARD=$value; cp_save; }
 fn cp_set_bxmidi(int? id = "", value = "") { BX_MIDI=$value; cp_save; }
 
@@ -93,11 +99,17 @@ fn boxerset_rows(int w) {
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Full Screen Key"
 	CP[$w][$n]["val"]="$BX_FULLKEY"; CP[$w][$n]["key"]=fullkey
 	n=$((n + 1))
+	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Release Mouse Key"
+	CP[$w][$n]["val"]="$BX_RELKEY"; CP[$w][$n]["key"]=relkey
+	n=$((n + 1))
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Key Held (ms)"
 	CP[$w][$n]["val"]="$BX_HOLD"; CP[$w][$n]["key"]=hold
 	n=$((n + 1))
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Mouse"
 	CP[$w][$n]["val"]="$BX_MOUSE"; CP[$w][$n]["key"]=mouse
+	n=$((n + 1))
+	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Mouse Capture"
+	CP[$w][$n]["val"]="$BX_CAPTURE"; CP[$w][$n]["key"]=capture
 	n=$((n + 1))
 	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Sound"; n=$((n + 1))
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Sound"
@@ -125,9 +137,11 @@ fn boxerset_do(int? w = "", k = "", int? dir = "") {
 	shelf) bxs_dialog shelf; return 0 ;;
 	pic) v := cp_next "$BX_PIC" "$dir" "${BXS_PICS[@]}"; BX_PIC=$v ;;
 	aspect) v := cp_next "$BX_ASPECT" "$dir" "${BXS_ASPECTS[@]}"; BX_ASPECT=$v ;;
+	relkey) v := cp_next "$BX_RELKEY" "$dir" "${BXS_RELKEYS[@]}"; BX_RELKEY=$v ;;
 	fullkey) v := cp_next "$BX_FULLKEY" "$dir" "${BXS_KEYS[@]}"; BX_FULLKEY=$v ;;
 	hold) v := cp_next "$BX_HOLD" "$dir" "${BXS_HOLDS[@]}"; BX_HOLD=$v ;;
 	mouse) v := cp_next "$BX_MOUSE" "$dir" "${BXS_MICE[@]}"; BX_MOUSE=$v ;;
+	capture) v := cp_next "$BX_CAPTURE" "$dir" "${BXS_CAPS[@]}"; BX_CAPTURE=$v ;;
 	art) [ "$BX_ART" = on ] && BX_ART=off || BX_ART=on ;;
 	sound) [ "$BX_SOUND" = on ] && BX_SOUND=off || BX_SOUND=on ;;
 	card) v := cp_next "$BX_CARD" "$dir" "${BXS_CARDS[@]}"; BX_CARD=$v ;;
@@ -144,9 +158,11 @@ fn boxerset_drop(int? w = "", int? r = "", int? c = "", k = "") {
 	case $k in
 	pic) dt_droplist "$w" "$r" "$c" cp_set_bxpic "${BXS_PICS[@]}" ;;
 	aspect) dt_droplist "$w" "$r" "$c" cp_set_bxaspect "${BXS_ASPECTS[@]}" ;;
+	relkey) dt_droplist "$w" "$r" "$c" cp_set_bxrel "${BXS_RELKEYS[@]}" ;;
 	fullkey) dt_droplist "$w" "$r" "$c" cp_set_bxkey "${BXS_KEYS[@]}" ;;
 	hold) dt_droplist "$w" "$r" "$c" cp_set_bxhold "${BXS_HOLDS[@]}" ;;
 	mouse) dt_droplist "$w" "$r" "$c" cp_set_bxmouse "${BXS_MICE[@]}" ;;
+	capture) dt_droplist "$w" "$r" "$c" cp_set_bxcap "${BXS_CAPS[@]}" ;;
 	card) dt_droplist "$w" "$r" "$c" cp_set_bxcard "${BXS_CARDS[@]}" ;;
 	midi) m := bxs_midis; read -ra ml <<< "$m"; dt_droplist "$w" "$r" "$c" cp_set_bxmidi "${ml[@]}" ;;
 	esac

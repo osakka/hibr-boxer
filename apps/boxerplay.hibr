@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.10
+app boxerplay "A DOS game from a gamebox" 0.12
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -276,7 +276,7 @@ fn bd_describe(box, name, state = "") {
 
 	bm_up "$box"
 	if [ -r "$box/boxer.json" ] && json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null; then
-		for p in .title .display.render .display.aspect .cpu.cycles .machine .voodoo .voodoospeed .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .launch.args .source.imported; do
+		for p in .title .display.render .display.aspect .cpu.cycles .machine .voodoo .voodoospeed .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .capture .launch.args .source.imported; do
 			old := json get BPJ "$p" 2> /dev/null || old=
 			[ -n "$old" ] && keep[$p]=$old
 		done
@@ -581,6 +581,9 @@ fn bp_start(int id) {
 	mm := bp_get BPJ .mouse default
 	[ "$mm" = default ] && mm=$BX_MOUSE
 	mm := bp_mousemode "$mm"
+	BP[$id]["capmode"] := bp_get BPJ .capture default
+	[ "${BP[$id]["capmode"]}" = default ] && BP[$id]["capmode"]=${BX_CAPTURE-click}
+	BP[$id]["cap"]=0
 	vo := bp_voodoo BPJ
 	read -ra vw <<< "$vo"
 	vopt=()
@@ -601,7 +604,7 @@ fn bp_start(int id) {
 	command -v console > /dev/null && console watch "${BP[$id]["fd"]}"
 	BP[$id]["t0"]=$EPOCHSECONDS
 	dt_retitle "$id" "${BP[$id]["name"]}"
-	dt_has dt_pointer && dt_pointer "$id" none
+	[ "${BP[$id]["capmode"]}" = click ] || { dt_has dt_pointer && dt_pointer "$id" none; }
 	return 0
 }
 
@@ -771,6 +774,10 @@ fn boxerplay_key(int id, key) {
 		dt_zoom "$id"
 		return 0
 	fi
+	if [ "$key" = "${BX_RELKEY-f12}" ] && [ "${BP[$id]["cap"]-}" = 1 ]; then
+		bp_capture "$id" 0
+		return 0
+	fi
 	if [ "$DT_TERMKEEP" = 1 ] && dt_has dt_keyassigned &&
 	   dt_keyassigned "$key"; then
 		return 1
@@ -800,13 +807,34 @@ fn bp_at(int id, int r, int c) {
 	ret "$r $c"
 }
 
+# Take the mouse for the game, or give it back. A game set to capture on click
+# leaves the pointer alone until it is clicked in, hides it while it is taken, and
+# lets it go on the release key (Control Panel > Boxer, F12 to begin with) or when it leaves the window; seamless has it all the time.
+fn bp_capture(int id, int on) {
+	[ "${BP[$id]["capmode"]-}" = click ] || return 0
+	[ "${BP[$id]["cap"]}" = "$on" ] && return 0
+	BP[$id]["cap"]=$on
+	if dt_has dt_pointer; then
+		if [ "$on" = 1 ]; then dt_pointer "$id" none; else dt_pointer "$id" ""; fi
+	fi
+	if [ "$on" = 1 ]; then
+		dt_notep low "Mouse captured. ${BX_RELKEY-f12} lets it go"
+	fi
+	return 0
+}
+
 # The pointer follows every move the desktop reports: with hovering on that is
-# all of them, and without it only those with a button down.
+# all of them, and without it only those with a button down. A game that
+# captures on click hears none of it until it has been clicked in.
 fn boxerplay_mouse(int id, act, btn, int r, int c, mods = "") {
 	local p=${BP[$id]["p"]} b=1 at ar ac
 
 	[ -n "$p" ] || return 0
 	case $btn in middle) b=4 ;; right) b=2 ;; esac
+	if [ "${BP[$id]["capmode"]-}" = click ] && [ "${BP[$id]["cap"]}" != 1 ]; then
+		case ${act##*-} in press) bp_capture "$id" 1 ;; esac
+		return 0
+	fi
 	at := bp_at "$id" "$r" "$c"
 	read -r ar ac <<< "$at"
 	case ${act##*-} in
@@ -819,12 +847,20 @@ fn boxerplay_mouse(int id, act, btn, int r, int c, mods = "") {
 
 # The pointer over the window with no button down, once the desktop has hovering
 # on (hibr 0.99.304): DOS's pointer goes where it is. The desktop says -1 -1 when
-# the pointer leaves, and DOS's pointer stays where it was.
+# the pointer leaves; a captured mouse is let go then, and otherwise DOS's pointer
+# stays where it was.
 fn boxerplay_hover(int id, int r, int c) {
 	local p=${BP[$id]["p"]-} at ar ac
 
-	[ -n "$p" ] && [ "$r" -ge 0 ] || return 0
+	[ -n "$p" ] || return 0
+	if [ "$r" -lt 0 ]; then
+		bp_capture "$id" 0
+		return 0
+	fi
 	[ -z "${BP[$id]["choose"]-}" ] || return 0
+	if [ "${BP[$id]["capmode"]-}" = click ] && [ "${BP[$id]["cap"]}" != 1 ]; then
+		return 0
+	fi
 	at := bp_at "$id" "$r" "$c"
 	read -r ar ac <<< "$at"
 	retro mouse "$p" "$ar" "$ac" "${BP[$id]["btn"]:-0}"
@@ -872,20 +908,13 @@ fn bp_toggle(int id) {
 	return 0
 }
 
-# Capture the mouse for the game, where the desktop offers it. Where hovering
-# is on the pointer already follows every move, which is all a point-and-click
-# game wants, so there is nothing to capture; where it is off, say how to turn it on.
+# Game > Capture Mouse: take the mouse or let it go, for a game set to capture on
+# click. A seamless game has it already, so say how to change that.
 fn bp_grab(int id) {
-	if dt_has dt_mousegrab; then
-		if [ "${BP[$id]["grab"]-}" = 1 ]; then
-			dt_mousegrab "$id" off
-			BP[$id]["grab"]=0
-		else
-			dt_mousegrab "$id" on
-			BP[$id]["grab"]=1
-		fi
+	if [ "${BP[$id]["capmode"]-}" = click ]; then
+		if [ "${BP[$id]["cap"]}" = 1 ]; then bp_capture "$id" 0; else bp_capture "$id" 1; fi
 	elif dt_has dt_hoveron && dt_hoveron; then
-		dt_notep low "The pointer already follows the mouse over this window"
+		dt_notep low "The mouse is seamless here; set Capture to click in the game's Get Info to have to click in first"
 	elif [ "${DT_HOVER-auto}" = auto ]; then
 		dt_notep low "Hover is Auto, and this terminal does not report the pointer in pixels; set Control Panel > Mouse > Hover to On to try it"
 	else

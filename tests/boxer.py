@@ -14,7 +14,7 @@ CORE = ROOT + "/build/testcore.so"
 RETRO = ROOT + "/build/retro.so"
 DESK = HIBR_TREE + "/programs/desktop/desktop.hibr"
 ENVBASE = {"XDG_RUNTIME_DIR": D, "HIBR_RETRO_AUDIO": "none", "BP_CORE": CORE,
-           "BP_SYS": D + "/sys", "HIBR_MODPATH": ROOT + "/build", "XDG_CACHE_HOME": D + "/cache"}
+           "BP_SYS": D + "/sys", "BX_CAPTURE": "seamless", "HIBR_MODPATH": ROOT + "/build", "XDG_CACHE_HOME": D + "/cache"}
 
 
 def gamebox(name="Test Game"):
@@ -357,6 +357,34 @@ if dbp and os.path.exists(dbp):
         check("a playing game window asks the desktop to hide the terminal's pointer over it: %s" % (open(D + "/ptr").read() if os.path.exists(D + "/ptr") else "no request"),
               os.path.exists(D + "/ptr") and ":none" in open(D + "/ptr").read(), "")
         t.close()
+        # A game set to capture on click: hovering does nothing until it is clicked in, then the pointer follows,
+        # and F12 lets it go.
+        open(pb + "/boxer.json", "w").write('{"boxer":1,"title":"Pointer","capture":"click","launch":{"program":"C:\\\\MOUSE.COM"}}')
+        t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', pb, False, {"BP_CORE": dbp, "DT_HOVER": "on"})
+        for _ in range(40):
+            t.collect(0.25)
+            if "▀" in t.screen().text():
+                break
+        t.collect(5.0)
+        gotc = lambda: [x for x in cells(t.screen()) if not (x[0] <= 5 and x[1] <= 14)]
+        g0 = gotc()
+        t.send(b"\x1b[<35;%d;%dM" % (25 + 1, 20 + 1))
+        t.collect(1.5)
+        check("capture on click: the pointer moving over the window is not taken before a click: %s" % (g0[:1],), gotc() == g0, (g0[:2], gotc()[:2]))
+        t.send(sx.press(10, 60) + sx.release(10, 60))
+        t.collect(1.0)
+        t.send(b"\x1b[<35;%d;%dM" % (60 + 1, 9 + 1))
+        t.collect(1.5)
+        g = gotc()
+        check("and after a click in, the pointer follows: %s" % (g[:1],), bool(g) and abs(g[0][0] - 9) <= 2 and abs(g[0][1] - 60) <= 2, g[:3])
+        t.send(b"\x1b[24~")
+        t.collect(0.5)
+        t.send(b"\x1b[<35;%d;%dM" % (45 + 1, 14 + 1))
+        t.collect(1.5)
+        g2 = gotc()
+        check("and F12 lets it go: the pointer no longer follows", g2 == g, (g[:2], g2[:2]))
+        t.close()
+        open(pb + "/boxer.json", "w").write('{"boxer":1,"title":"Pointer","capture":"seamless","launch":{"program":"C:\\\\MOUSE.COM"}}')
         # A terminal that reports the pointer in pixels (hovering Auto turns on by itself): the pixel is turned into
         # a place over the picture, and DOS's pointer lands in the cell the pixel is in, not one over.
         t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', pb, False, {"BP_CORE": dbp}, ["mpix"])
@@ -424,7 +452,7 @@ q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/p
                    timeout=60)
 out = q.stdout
 check("the pane lists the shelf folder, rendering, shape, full screen key, key hold, mouse and sound",
-      all(w in out for w in ("Folder", "Rendering", "Shape", "Full Screen Key", "Key Held", "Mouse", "Sound")), out + q.stderr)
+      all(w in out for w in ("Folder", "Rendering", "Shape", "Full Screen Key", "Release Mouse Key", "Key Held", "Mouse", "Mouse Capture", "Sound")), out + q.stderr)
 check("a row steps through its choices: mouse direct goes to relative, sound toggles",
       "mouse=relative" in out and "sound=off" in out, out + q.stderr)
 check("the pane has Fetch Box Art, off until it is turned on", "Fetch Box Art|off" in out, out + q.stderr)
@@ -483,6 +511,16 @@ q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/p
 check("the MIDI Output dropdown offers disabled and each synth in the folder",
       "[disabled MT32_CONTROL.ROM ROM1.BIN gm.sf2]" in q.stdout or ("MT32_CONTROL.ROM" in q.stdout and "gm.sf2" in q.stdout and "disabled" in q.stdout),
       q.stdout + q.stderr)
+
+# The defaults: a mouse is captured on a click, and F12 lets it go.
+env0 = dict(os.environ, **ENVBASE)
+env0.pop("BX_CAPTURE", None)
+env0.pop("BX_RELKEY", None)
+q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\n"
+                    "echo \"$BX_CAPTURE $BX_RELKEY\""
+                    % (load("console", RETRO), DESK, ROOT, HIBR_TREE + "/programs/desktop", ROOT)],
+                   capture_output=True, text=True, env=env0, timeout=60)
+check("a mouse is captured on a click by default, and F12 lets it go", q.stdout.strip() == "click f12", q.stdout + q.stderr)
 
 # A game with several programs and none chosen asks which to run, in its own window, and remembers the answer.
 csh = os.path.join(D, "chooser")
