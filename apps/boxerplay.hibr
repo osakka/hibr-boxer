@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.9
+app boxerplay "A DOS game from a gamebox" 0.10
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -276,7 +276,7 @@ fn bd_describe(box, name, state = "") {
 
 	bm_up "$box"
 	if [ -r "$box/boxer.json" ] && json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null; then
-		for p in .title .display.render .display.aspect .cpu.cycles .machine .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .launch.args .source.imported; do
+		for p in .title .display.render .display.aspect .cpu.cycles .machine .voodoo .voodoospeed .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .launch.args .source.imported; do
 			old := json get BPJ "$p" 2> /dev/null || old=
 			[ -n "$old" ] && keep[$p]=$old
 		done
@@ -429,6 +429,23 @@ fn bp_mousemode(m) {
 	esac
 }
 
+# The 3dfx Voodoo settings of a game as DOSBox Pure's options, key=value, one a
+# word: none when both are left to the core, which has Voodoo on.
+fn bp_voodoo(doc) {
+	local v s o=
+
+	v := bp_get "$doc" .voodoo default
+	s := bp_get "$doc" .voodoospeed default
+	[ "$v" = default ] || o="dosbox_pure_voodoo=$v"
+	case $s in
+	multi) o="$o dosbox_pure_voodoo_perf=1" ;;
+	multi-low) o="$o dosbox_pure_voodoo_perf=3" ;;
+	single) o="$o dosbox_pure_voodoo_perf=0" ;;
+	single-low) o="$o dosbox_pure_voodoo_perf=2" ;;
+	esac
+	ret "${o# }"
+}
+
 # The MIDI synths in the folder Control Panel > Boxer names, one a line, as
 # DOSBox Pure knows them: a SoundFont (.sf2), a Roland MT-32 or CM-32L's control
 # ROM (its PCM ROM goes with it), or a Sound Canvas SC-55's ROM1.BIN. Nothing
@@ -543,8 +560,9 @@ fn bp_conf(box, dir) {
 
 # Start the game: its run.conf made, and the core given it.
 fn bp_start(int id) {
-	local box=${BP[$id]["box"]} dir conf mm midi
+	local box=${BP[$id]["box"]} dir conf mm midi vo kv
 	local -A snd
+	local -a vw vopt
 
 	BP[$id]["choose"]=
 	json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null || return 0
@@ -563,8 +581,12 @@ fn bp_start(int id) {
 	mm := bp_get BPJ .mouse default
 	[ "$mm" = default ] && mm=$BX_MOUSE
 	mm := bp_mousemode "$mm"
+	vo := bp_voodoo BPJ
+	read -ra vw <<< "$vo"
+	vopt=()
+	for kv in "${vw[@]}"; do vopt+=(-o "$kv"); done
 	BP[$id]["p"] := retro open "$BP_CORE" "$conf" -s "$BP_SYS" -S "$box/saves" \
-		-o "dosbox_pure_mouse_input=$mm" -o "dosbox_pure_midi=$midi" 2>&1 ||
+		-o "dosbox_pure_mouse_input=$mm" -o "dosbox_pure_midi=$midi" "${vopt[@]}" 2>&1 ||
 		{
 			BP[$id]["err"]="DOSBox Pure would not start: ${BP[$id]["p"]}"
 			return 0

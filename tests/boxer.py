@@ -129,8 +129,8 @@ t.collect(1.2)
 sc = t.screen()
 check("Get Info opens the game's settings: name, program, speed, graphics, sound card, IRQ, DMA, port, MIDI, mouse",
       all(w in sc.text() for w in ("Beta Racer Settings", "Name", "Program", "Speed", "Graphics", "Sound Card", "Sound IRQ",
-                                   "Sound DMA", "Sound Port", "MIDI", "Mouse")), sc)
-t.send(b"\x1b[B" * 6 + b"\x1b[C")
+                                   "Sound DMA", "Sound Port", "MIDI", "Mouse", "3D (Voodoo)", "3D Speed")), sc)
+t.send(b"\x1b[B" * 8 + b"\x1b[C")
 t.collect(0.8)
 doc = open(os.path.join(shelf, "Beta Racer.boxer", "boxer.json")).read()
 check("a field changed in that window (Sound IRQ) is written into the box", '"irq": "3"' in doc, doc)
@@ -459,6 +459,21 @@ check("a game's speed, graphics and sound are written into the conf after the pe
       "[cpu]\ncycles=8000" in out and "[dosbox]\nmachine=vgaonly" in out
       and "[sblaster]\nsbtype=sbpro2\nsbbase=240\nirq=5\ndma=3" in out
       and out.index("cycles=max") < out.index("cycles=8000"), out + err)
+
+# 3dfx Voodoo: left to the core when nothing is set, and the settings reach it as its own options.
+vox = os.path.join(D, "voodoo")
+os.makedirs(vox)
+def voo(js):
+    open(vox + "/boxer.json", "w").write(js)
+    r = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxerplay.hibr\njson parse BPJ \"$(< '%s/boxer.json')\"\nv := bp_voodoo BPJ; echo \"[$v]\"\n"
+                        % (load("console"), DESK, ROOT, vox)],
+                       capture_output=True, text=True, env=dict(os.environ, **ENVBASE), timeout=60)
+    return r.stdout.strip() + r.stderr
+check("a game with no Voodoo setting leaves the core's own: nothing is passed", voo('{"boxer":1}') == "[]", voo('{"boxer":1}'))
+got = voo('{"boxer":1,"voodoo":"12mb","voodoospeed":"single"}')
+check("a Voodoo memory and speed are passed as the core's options", got == "[dosbox_pure_voodoo=12mb dosbox_pure_voodoo_perf=0]", got)
+got = voo('{"boxer":1,"voodoo":"off"}')
+check("Voodoo off is passed as off", got == "[dosbox_pure_voodoo=off]", got)
 
 # A game with several programs and none chosen asks which to run, in its own window, and remembers the answer.
 csh = os.path.join(D, "chooser")
