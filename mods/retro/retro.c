@@ -343,7 +343,7 @@ int rt_draw(sh *s, rt_pl *p, int ac, char **av)
 	rt_dp->fill(v[0], v[1], p->rows, p->cols, " ");
 	if (p->mode == 0 && rt_dp->image && cw > 1 && ch > 1 &&
 	    row >= prow && col >= pcol && row + th <= prow + ph && col + tw <= pcol + pw &&
-	    rt_dp->image(s, 0, row, col, th, tw, f, w, h, 0)) {
+	    rt_dp->image(s, pane, pane ? row - prow : row, pane ? col - pcol : col, th, tw, f, w, h, 0)) {
 		drew = 1;
 	} else {
 		int hth = th;
