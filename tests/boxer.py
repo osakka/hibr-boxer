@@ -123,6 +123,20 @@ for pix in (True, False):
           and "Alpha Quest" not in tx, tx.count("\u2580"))
     t.close()
 
+# A second game while one plays: Boxer says which is running, brings it forward and opens no window of its own.
+import json
+two = os.path.join(D, "Second Game.boxer")
+shutil.copytree(box, two)
+dj = json.load(open(two + "/boxer.json"))
+dj["title"] = "Second Game"
+json.dump(dj, open(two + "/boxer.json", "w"))
+t = desk('sleep 1\nSID := dt_launch boxerplay "%s"\necho "[${BP[$SID]["name"]-gone}|${DT[$SID]["ws"]-none}]" > %s/second.out' % (two, D), box)
+t.collect(3.0)
+tx = t.screen().text()
+check("a second game while one plays says so and names the one running", b"Test Game is already running" in t.raw.replace(b"\x1b[0m", b"") or (b"already running" in t.raw and b"Second Game" in t.raw), tx[:300])
+check("and the second one opens no window and no core", os.path.exists(D + "/second.out") and "[gone|none]" in open(D + "/second.out").read() and tx.count("Second Game") == 0, tx[:300])
+t.close()
+
 # Get Info opens the settings in a window of their own; a field changed there is written into the box.
 t = appdesk("boxerinfo", os.path.join(shelf, "Beta Racer.boxer"))
 t.collect(1.2)

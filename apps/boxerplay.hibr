@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.12
+app boxerplay "A DOS game from a gamebox" 0.13
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -670,8 +670,35 @@ fn bp_chooseclick(int id, int r, int c) {
 	return 0
 }
 
+# The game already running in another window, if any: its id. The core is one
+# per process, so a second game cannot start beside it.
+fn bp_running(int id) {
+	local k
+
+	for k in "${!BP[@]}"; do
+		[ "$k" = "$id" ] && continue
+		[ -n "${BP[$k]["p"]-}" ] && { ret "$k"; return 0; }
+	done
+	return 1
+}
+
+# A game asked for while another plays: say which, bring that one forward and
+# let this window go, rather than opening one that can only show an error.
+fn bp_busy(int id, int other) {
+	local have=${BP[$other]["name"]} want=${BP[$id]["name"]}
+
+	if [ "$have" = "$want" ]; then
+		dt_notep low "$have is already running"
+	else
+		dt_notep high "$have is already running. Boxer plays one game at a time: close it to play $want"
+	fi
+	dt_raise "$other"
+	BP[$id]["gone"]=1
+	return 0
+}
+
 fn boxerplay_open(int id, arg = "") {
-	local box=$arg title prog n i v
+	local box=$arg title prog n i v o
 
 	BP[$id]["err"]=
 	BP[$id]["box"]=$box
@@ -692,6 +719,11 @@ fn boxerplay_open(int id, arg = "") {
 	title=${title%.boxer}
 	BP[$id]["name"]=${title%.gamebox}
 	BP[$id]["progs"]=
+	if o := bp_running "$id"; then
+		bp_busy "$id" "$o"
+		dt_del "$id"
+		return 0
+	fi
 	prog := bp_get BPJ .launch.program
 	if [ -z "$prog" ]; then
 		n := json len BPJ .programs 2> /dev/null || n=0
@@ -930,6 +962,8 @@ fn bp_reset(int id) {
 
 fn boxerplay_close(int id) {
 	local fd=${BP[$id]["fd"]} st box=${BP[$id]["box"]-}
+
+	[ -n "${BP[$id]["gone"]-}" ] && { unset "BP[$id]"; return 0; }
 
 	# The core goes first: finishing an install can take a while, and a frame
 	# nobody reads in the meantime is a descriptor the desktop warns about.
