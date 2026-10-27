@@ -9,9 +9,9 @@ covers, double-click to play.
 [ADR 0001](docs/adr/0001-two-ways-to-put-an-emulator-in-a-window.md) (our own libretro frontend; spike passed, see [docs/spike-1-frame-rate.md](docs/spike-1-frame-rate.md)); DOS only: [ADR 0002](docs/adr/0002-dos-only.md).
 
 ```text
-make && cores/build.sh WORK OUT        # the module, and DOSBox Pure from pinned source
+make && make core                      # the module, and DOSBox Pure from pinned source into build/cores
 make check check-retro                 # the driver and the module
-DBP_CORE=OUT/dosbox_pure_libretro.so make check-boxer   # the apps, and the whole way on the real core
+DBP_CORE=build/cores/dosbox_pure_libretro.so make check-boxer   # the apps, and the whole way on the real core
 boxer.hibr import ~/Games/prince       # from a shell: a folder, zip, .iso/.cue or program
 ```
 
@@ -33,6 +33,12 @@ Licence: MIT, as the rest of hibr.
 ## Box art
 
 A game's cover is `.cover.png` in its box (`cover.png` is read too). One you put there always wins; one that came with a game, or sits beside it, is taken in on import. When **Control Panel > Boxer > Fetch Box Art** is on (it is off by default: it sends the game's name to a server), import also fetches the picture from the libretro thumbnails project (https://thumbnails.libretro.com/DOS/Named_Boxarts/), matched by name: the same name, or, for a numbered game such as "Leisure Suit Larry 2", the title that begins with it. A series name alone is not guessed at. A download is kept only if it is a PNG. Fetching waits on the network (up to half a minute a download), as an import waits on its copying. `boxer.hibr cover BOX [PNG]` fetches or sets one, `boxer.hibr covers` fills in the shelf, and a game's right-click menu in Files has Fetch Cover.
+
+## What it runs on
+
+The emulator is **DOSBox Pure**, by Bernhard Schelling, which is built on **DOSBox** by the DOSBox Team; inside it the MT-32 is **Munt** (Dean Beeler, Jerome Fisher, Sergey V. Mikayev, LGPL-2.1+) and the OPL3 and SC-55 are **Nuked** (Nuke.YKT). It speaks **libretro**. DOSBox Pure is GPL-2.0 or later. Boxer's About window names all of them, and the deb's `copyright` file lists them.
+
+DOSBox Pure is built here from source and never changed. `cores/PINS` names a tag and the commit that tag must be, and `cores/build.sh` (`make core`) refuses anything else, however the source was reached: a url may be a list, and `CORES_URL_dosbox_pure` puts a mirror of your own first. It leaves `dosbox_pure_libretro.so.build` beside the core, recording the source, tag, commit, compiler and checksum of what was built, and the deb carries that record. The build is the same source with whatever compiler you have, so the checksum can differ from ours; the commit cannot. The suite checks that the core under test is the pinned version. DOSBox Pure's home is https://codeberg.org/schelling/dosbox-pure: it moved there when its author's account was renamed, and the old GitHub and `schellingb` addresses only point on.
 
 ## Credit
 

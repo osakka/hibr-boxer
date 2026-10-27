@@ -329,6 +329,10 @@ check("a drop imports what it can and skips what it cannot, the window saying wh
 # program is imported, its run.conf is given to DOSBox Pure, and the program's text is on the screen -- with the
 # banner and the mount message cleared away, so the text is alone at the top.
 dbp = os.environ.get("DBP_CORE")
+# The DOSBox Pure under test is the one cores/PINS names, so what is tested is what is shipped.
+if dbp:
+    pin = [l.split() for l in open(ROOT + "/cores/PINS") if l.startswith("dosbox_pure ")][0]
+    check("the DOSBox Pure under test is the pinned version %s" % pin[2], pin[2].encode() in open(dbp, "rb").read(), dbp)
 if dbp and os.path.exists(dbp):
     hsrc = os.path.join(D, "src", "Hello")
     os.makedirs(hsrc)
@@ -675,6 +679,9 @@ t.collect(1.0)
 tx = t.screen().text()
 check("About Boxer is a tribute to Boxer, with its author and its address",
       all(w in tx for w in ("tribute to Boxer", "Alun Bestor", "https://boxerapp.com", "github.com/alunbestor/Boxer", "and contributors)", "thumbnails project.")), t.screen())
+check("and it names what Boxer runs on: DOSBox Pure and its author, DOSBox, Munt, Nuked, libretro",
+      all(w in tx for w in ("DOSBox Pure", "Bernhard Schelling", "DOSBox Team", "codeberg.org/schelling/dosbox-pure", "Munt", "Nuke.YKT", "libretro")), t.screen())
+check("and the buttons are not drawn over the credits", "OK" in tx and "thumbnails project." in tx and "runs on hibr" in tx, t.screen())
 t.send(b"\r")
 t.collect(0.6)
 check("and Enter closes it", "tribute to Boxer" not in t.screen().text(), t.screen())

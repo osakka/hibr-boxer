@@ -4,7 +4,7 @@ CFLAGS = -g -Wall
 INC = -Imods/retro -I$(HIBR)/include
 B = build
 
-.PHONY: all check check-retro check-boxer clean
+.PHONY: all check check-retro check-boxer core clean
 all: $(B)/testcore.so $(B)/rl_harness
 
 $(B):
@@ -29,6 +29,11 @@ check-retro: all
 
 check-boxer: $(B)/retro.so $(B)/testcore.so $(B)/rl_shot
 	python3 tests/boxer.py
+
+# DOSBox Pure, from the source pinned in cores/PINS, into build/cores: the one way the core is built.
+core:
+	rm -rf $(B)/corework $(B)/cores
+	sh cores/build.sh $(B)/corework $(B)/cores
 
 clean:
 	rm -rf $(B)

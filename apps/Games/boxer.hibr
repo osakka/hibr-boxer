@@ -17,12 +17,12 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.10
+app boxer "DOS games, one folder to a game" 1.11
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
 command -v dt_app > /dev/null && dt_app boxer "Boxer" 21 72 "" "▣" fixed
-command -v dt_app > /dev/null && dt_app boxerabout "About Boxer" 17 78 "" "" fixed hidden
+command -v dt_app > /dev/null && dt_app boxerabout "About Boxer" 28 78 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxercover "Fetch Cover" 10 66 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxerdone "Game Is Already Installed" 10 66 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxerinfo "Game Settings" 20 60 "" "" fixed hidden
@@ -966,9 +966,9 @@ fn boxerdone_close(int id) {
 
 # --- About -----------------------------------------------------------------------
 
-# About Boxer: what this is a tribute to, and whose it is.
+# About Boxer: what this is a tribute to, and whose work it runs on.
 fn boxer_about() {
-	local h=17 w=78 rid
+	local h=28 w=78 rid
 
 	dt_dlgat "$h" "$w"
 	rid := dt_new "About Boxer" "$DT_DLGH" "$DT_DLGW" "$DT_DLGR" "$DT_DLGC" boxerabout
@@ -988,8 +988,19 @@ fn boxerabout_draw(int id, int h, int w, int row, int col) {
 		"How a game is recognised, installed and shelved here follows Boxer's own"
 		"rules, read from its source (GPL-2.0, Alun Bestor and contributors)."
 		""
-		"Games run in DOSBox Pure, a libretro core. Box art, when fetching is on,"
-		"comes from the libretro thumbnails project."
+		"Games run in DOSBox Pure, a libretro core by Bernhard Schelling, which is"
+		"built on DOSBox by the DOSBox Team. Everything that makes a game sound"
+		"and look like it did is theirs, and the least we can do is say so:"
+		"  DOSBox Pure   https://codeberg.org/schelling/dosbox-pure"
+		"  DOSBox        https://www.dosbox.com"
+		"Inside it, the MT-32 is Munt (Dean Beeler, Jerome Fisher, Sergey V."
+		"Mikayev), and the OPL3 and the SC-55 are Nuked, by Nuke.YKT. The core"
+		"speaks libretro, from the libretro project (https://www.libretro.com)."
+		"DOSBox Pure and DOSBox are GPL-2.0 or later; Munt is LGPL-2.1 or later."
+		""
+		"Box art, when fetching is on, comes from the libretro thumbnails project."
+		""
+		"Boxer for hibr is MIT, and runs on hibr."
 	)
 
 	dt_wclear "$id"
