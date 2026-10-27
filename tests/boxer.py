@@ -799,4 +799,7 @@ check("a JPEG is turned away: a cover must be a PNG", "st=1" in out and "must be
 srv.shutdown()
 
 shutil.rmtree(D, True)
+import glob
+for f in glob.glob("/tmp/hibr-boxer*-%d.hibr" % os.getpid()):
+    os.remove(f)
 report()
