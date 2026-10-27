@@ -137,6 +137,36 @@ check("a second game while one plays says so and names the one running", b"Test 
 check("and the second one opens no window and no core", os.path.exists(D + "/second.out") and "[gone|none]" in open(D + "/second.out").read() and tx.count("Second Game") == 0, tx[:300])
 t.close()
 
+# A game with a relative mouse is locked when it is captured, where the desktop can: raw motion goes to the core,
+# the desktop's unlock ends the capture, a lock it refuses leaves a plain capture, and a direct mouse is never locked.
+lockbox = os.path.join(D, "Lock Game.boxer")
+shutil.copytree(box, lockbox)
+def lockrun(mouse, can, steps):
+    lj = json.load(open(lockbox + "/boxer.json"))
+    lj.update({"title": "Lock Game", "capture": "click", "mouse": mouse})
+    json.dump(lj, open(lockbox + "/boxer.json", "w"))
+    for f in ("lock.log", "lock.out"):
+        if os.path.exists(D + "/" + f):
+            os.remove(D + "/" + f)
+    pre = ('fn dt_ptrlockcan() { return %d; }\nfn dt_pointerlock(int id, st) { echo "$id:$st" >> %s/lock.log; return 0; }\ndeclare -A LI' % (0 if can else 1, D))
+    body = ('sleep 1\nboxerplay_mouse "$BID" press left 10 10 ""\n' + steps +
+            'LI := retro info "${BP[$BID]["p"]}"\necho "${LI[motion]}|${BP[$BID]["cap"]}|${BP[$BID]["lock"]}|${BP[$BID]["nolock"]-}" > %s/lock.out' % D)
+    t = desk(body, lockbox, False, {}, None, pre)
+    t.collect(3.0)
+    t.close()
+    log = open(D + "/lock.log").read().split() if os.path.exists(D + "/lock.log") else []
+    return log, open(D + "/lock.out").read().strip() if os.path.exists(D + "/lock.out") else "no output"
+log, out = lockrun("relative", True, 'boxerplay_mouse "$BID" rel none 4 3 rel\nboxerplay_mouse "$BID" rel left -1 5 rel\n')
+check("a click in a relative-mouse game asks the desktop for the lock, and its raw motion goes to the core", log[:1] == ["%s:on" % log[0].split(":")[0]] and out.startswith("8 3|1|1|"), (log, out))
+log, out = lockrun("relative", True, 'boxerplay_mouse "$BID" rel none 4 3 rel\nboxerplay_mouse "$BID" unlock none 0 0 ""\n')
+check("the desktop's unlock after use ends the capture", out.endswith("|0|0|") or out.endswith("|0|0"), (log, out))
+log, out = lockrun("relative", True, 'boxerplay_mouse "$BID" unlock none 0 0 ""\n')
+check("a lock the desktop refuses leaves a plain capture, and is not asked for again", out.split("|")[1:] == ["1", "0", "1"], (log, out))
+log, out = lockrun("relative", False, "")
+check("where no display can hold the pointer the capture is the plain one and no lock is asked for", log == [] and out.split("|")[1:3] == ["1", "0"], (log, out))
+log, out = lockrun("direct", True, "")
+check("a game with a direct mouse is captured but never locked", log == [] and out.split("|")[1:3] == ["1", "0"], (log, out))
+
 # Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
 for conf in ("on", "off"):
     t = desk('sleep 1.5\ndt_closereq "$BID"\nsleep 0.5\necho "[${BP[$BID]["name"]-gone}]" > %s/closed.%s' % (D, conf), box, env={"BX_CONFIRM": conf})

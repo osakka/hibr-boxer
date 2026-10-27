@@ -119,6 +119,14 @@ def pointer(row, col, prow, pcol, gfx):
     return [int(v) for v in r[1:4]] if len(r) >= 4 else None
 
 
+# Raw motion from a locked pointer is added up as it is given, buttons and all.
+sc = ("need console retro; console open || exit 1; id := retro open %s; sleep 0.3; "
+      "retro motion $id 3 -2 0; retro motion $id 4 -2 1; retro motion $id -1 5 0; sleep 0.1; "
+      "i := retro info $id; console close; printf 'RESULT %%s|%%s\\n' \"${i[motion]}\" \"${i[pointer]}\"; retro close $id" % CORE)
+t = tty(sc, None).decode("utf-8", "replace")
+r = t[t.rindex("RESULT "):].split("\n")[0][7:] if "RESULT " in t else ""
+check(r.startswith("6 1|") or r.startswith("6 1 "), "retro motion adds raw counts: 3,-2 then 4,-2 then -1,5 is 6 1 (%s)" % r)
+
 for gfx in (None, "kitty"):
     c = pointer(10, 30, 2, 1, gfx)
     far = pointer(10, 30, 12, 20, gfx)

@@ -107,7 +107,7 @@ struct rl {
 	rl_ke *ev, *hold;
 	int nev, nhold;
 	retro_keyboard_event_t kcb;
-	int px, py, pbtn, pwant, lpx, lpy, havep, mdx, mdy, wup, wdown;
+	int px, py, pbtn, pwant, lpx, lpy, havep, mdx, mdy, mtx, mty, wup, wdown;
 	double pdown, prel;
 	rl_var *vars;
 	int nvars, vdirty;
@@ -1052,6 +1052,8 @@ void rl_info(rl *r, rl_st *st)
 	st->px = r->px;
 	st->py = r->py;
 	st->pbtn = r->pbtn;
+	st->mtx = r->mtx;
+	st->mty = r->mty;
 	st->ended = r->ended;
 	st->fps = r->fps;
 	st->rate = r->rate;
@@ -1105,6 +1107,26 @@ void rl_hold(rl *r, unsigned code, uint32_t chr, unsigned mods, int ms)
 	pthread_mutex_unlock(&r->mu);
 }
 
+/* The buttons and wheel of a pointer report; the caller holds the lock. */
+static void rl_btns(rl *r, int buttons, int wheel)
+{
+	/* A press is held for a few frames at least, so a game that polls the button sees a quick tap. */
+	if (buttons && !r->pbtn)
+		r->pdown = ra_now();
+	if (!buttons && r->pbtn && ra_now() - r->pdown < 0.05) {
+		r->pwant = 0;
+		r->prel = r->pdown + 0.05;
+	} else {
+		r->pbtn = buttons;
+		r->pwant = buttons;
+		r->prel = 0;
+	}
+	if (wheel > 0)
+		r->wup += wheel;
+	else if (wheel < 0)
+		r->wdown -= wheel;
+}
+
 void rl_pointer(rl *r, int x, int y, int buttons, int wheel)
 {
 	int fw, fh;
@@ -1121,21 +1143,19 @@ void rl_pointer(rl *r, int x, int y, int buttons, int wheel)
 	r->lpx = r->px = x;
 	r->lpy = r->py = y;
 	r->havep = 1;
-	/* A press is held for a few frames at least, so a game that polls the button sees a quick tap. */
-	if (buttons && !r->pbtn)
-		r->pdown = ra_now();
-	if (!buttons && r->pbtn && ra_now() - r->pdown < 0.05) {
-		r->pwant = 0;
-		r->prel = r->pdown + 0.05;
-	} else {
-		r->pbtn = buttons;
-		r->pwant = buttons;
-		r->prel = 0;
-	}
-	if (wheel > 0)
-		r->wup += wheel;
-	else if (wheel < 0)
-		r->wdown -= wheel;
+	rl_btns(r, buttons, wheel);
+	pthread_mutex_unlock(&r->mu);
+}
+
+/* Motion the terminal has counted for a locked pointer: raw counts, handed to the core as the mouse's own, with no position. */
+void rl_motion(rl *r, int dx, int dy, int buttons, int wheel)
+{
+	pthread_mutex_lock(&r->mu);
+	r->mdx += dx;
+	r->mdy += dy;
+	r->mtx += dx;
+	r->mty += dy;
+	rl_btns(r, buttons, wheel);
 	pthread_mutex_unlock(&r->mu);
 }
 

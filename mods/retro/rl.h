@@ -13,7 +13,7 @@ typedef struct rl rl;
 /* What a running core says about itself, read without stopping it. */
 typedef struct rl_st rl_st;
 struct rl_st {
-	int w, h, paused, ended, px, py, pbtn;
+	int w, h, paused, ended, px, py, pbtn, mtx, mty;
 	double fps, rate, aspect;
 	unsigned long frames, seq;
 	char *name, *ver, *err, *sound;
@@ -47,6 +47,7 @@ void rl_hold(rl *r, unsigned code, uint32_t chr, unsigned mods, int ms);
 
 /* The pointer, in the core's own -0x7fff..0x7fff over the picture, and the buttons: 1 left, 2 right, 4 middle. */
 void rl_pointer(rl *r, int x, int y, int buttons, int wheel);
+void rl_motion(rl *r, int dx, int dy, int buttons, int wheel);
 
 /* The joypad, one bit per RETRO_DEVICE_ID_JOYPAD_ button. */
 void rl_pad(rl *r, unsigned mask);

@@ -393,6 +393,8 @@ int rt_info(sh *s, rt_pl *p)
 
 		snprintf(pt, sizeof pt, "%d %d %d", st.px, st.py, st.pbtn);
 		rt_field(s, "pointer", pt);
+		snprintf(pt, sizeof pt, "%d %d", st.mtx, st.mty);
+		rt_field(s, "motion", pt);
 	}
 	rt_field(s, "error", st.err);
 	rl_stfree(&st);
@@ -413,7 +415,7 @@ void rt_usage(void)
 	lg(HIBR_LERR, "usage: retro open core [game] [-s sysdir] [-S savedir] [-o key=value]... | list | "
 		      "close id|all | fd|wake|frame|info|pause|play|toggle|reset id | size id cols rows [pixels|half] | "
 		      "aspect id 4:3|auto|ratio | draw id row col [-p pane] | key id name [down|up|tap] | "
-		      "hold id ms | mouse id row col buttons [wheel] | pad id mask | option id key value | "
+		      "hold id ms | mouse id row col buttons [wheel] | motion id dx dy buttons [wheel] | pad id mask | option id key value | "
 		      "save id file | load id file");
 }
 
@@ -628,6 +630,14 @@ int m_retro(sh *s, int ac, char **av)
 			y = y < -32767 ? -32767 : y > 32767 ? 32767 : y;
 		}
 		rl_pointer(p->r, x, y, btn, wheel);
+		return HIBR_OK;
+	}
+	if (!strcmp(sub, "motion")) {
+		if (ac < 6) {
+			rt_usage();
+			return 2;
+		}
+		rl_motion(p->r, atoi(av[3]), atoi(av[4]), atoi(av[5]), ac > 6 ? atoi(av[6]) : 0);
 		return HIBR_OK;
 	}
 	if (!strcmp(sub, "pad") && ac > 3) {

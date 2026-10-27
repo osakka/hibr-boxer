@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.15
+app boxerplay "A DOS game from a gamebox" 0.16
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -582,6 +582,11 @@ fn bp_start(int id) {
 	mm := bp_get BPJ .mouse default
 	[ "$mm" = default ] && mm=$BX_MOUSE
 	mm := bp_mousemode "$mm"
+	BP[$id]["rel"]=0
+	[ "$mm" = virtual ] && BP[$id]["rel"]=1
+	BP[$id]["lock"]=0
+	BP[$id]["nolock"]=
+	BP[$id]["lockseen"]=
 	BP[$id]["capmode"] := bp_get BPJ .capture default
 	[ "${BP[$id]["capmode"]}" = default ] && BP[$id]["capmode"]=${BX_CAPTURE-click}
 	BP[$id]["cap"]=0
@@ -875,17 +880,80 @@ fn bp_at(int id, int r, int c) {
 
 # Take the mouse for the game, or give it back. A game set to capture on click
 # leaves the pointer alone until it is clicked in, hides it while it is taken, and
-# lets it go on the release key (Control Panel > Boxer, F12 to begin with) or when it leaves the window; seamless has it all the time.
+# lets it go on the release key (Control Panel > Boxer, F12 to begin with) or when
+# it leaves the window; seamless has it all the time. A game whose mouse is
+# relative is also locked, where the desktop can: the pointer stays still and the
+# window is told how far it moved, so it can turn without end. The desktop's own
+# Release Pointer key lets a lock go.
 fn bp_capture(int id, int on) {
+	local key=${BX_RELKEY-f12}
+
 	[ "${BP[$id]["capmode"]-}" = click ] || return 0
 	[ "${BP[$id]["cap"]}" = "$on" ] && return 0
 	BP[$id]["cap"]=$on
+	if [ "$on" = 1 ]; then
+		bp_lock "$id" 1 && key=${DT_KEYS["ptrrelease"]-ctrl-f10}
+	else
+		bp_lock "$id" 0
+	fi
 	if dt_has dt_pointer; then
 		if [ "$on" = 1 ]; then dt_pointer "$id" none; else dt_pointer "$id" ""; fi
 	fi
 	if [ "$on" = 1 ]; then
-		dt_notep low "Mouse captured. ${BX_RELKEY-f12} lets it go"
+		dt_notep low "Mouse captured. $key lets it go"
 	fi
+	return 0
+}
+
+# Ask the desktop to hold the pointer still for a game with a relative mouse, or
+# give it back: status 0 when the request went out. The desktop's unlock is the
+# truth, so a lock it refuses outright leaves the plain capture in place.
+fn bp_lock(int id, int on) {
+	if [ "$on" = 0 ]; then
+		[ "${BP[$id]["lock"]-0}" = 1 ] && dt_pointerlock "$id" off
+		BP[$id]["lock"]=0
+		return 1
+	fi
+	[ "${BP[$id]["rel"]-0}" = 1 ] && [ -z "${BP[$id]["nolock"]-}" ] || return 1
+	dt_has dt_ptrlockcan && dt_has dt_pointerlock && dt_ptrlockcan || return 1
+	dt_pointerlock "$id" on || return 1
+	BP[$id]["lock"]=1
+	BP[$id]["lockseen"]=
+	return 0
+}
+
+# What a locked pointer says, in raw counts: row is down, column across. The
+# buttons it has down are the game's, and the wheel turns the game's wheel.
+fn bp_motion(int id, act, btn, int dy, int dx) {
+	local p=${BP[$id]["p"]} b=0 w=0
+
+	[ "${BP[$id]["lock"]-0}" = 1 ] || return 0
+	case $btn in left) b=1 ;; right) b=2 ;; middle) b=4 ;; esac
+	case ${act##*-} in
+	press) BP[$id]["btn"]=$b ;;
+	release) BP[$id]["btn"]=0; b=0 ;;
+	wheelup) w=1; b=${BP[$id]["btn"]:-0} ;;
+	wheeldown) w=-1; b=${BP[$id]["btn"]:-0} ;;
+	*) ;;
+	esac
+	BP[$id]["lockseen"]=1
+	retro motion "$p" "$dx" "$dy" "$b" "$w"
+	return 0
+}
+
+# The desktop ended the lock: its key, focus moving, a menu, or it would not. A
+# lock that never gave a report was refused, so the capture stays as a plain one
+# and the lock is not asked for again in this window; any other end lets it all go.
+fn bp_unlocked(int id) {
+	[ "${BP[$id]["lock"]-0}" = 1 ] || return 0
+	BP[$id]["lock"]=0
+	if [ -z "${BP[$id]["lockseen"]-}" ]; then
+		BP[$id]["nolock"]=1
+		return 0
+	fi
+	BP[$id]["cap"]=0
+	dt_has dt_pointer && dt_pointer "$id" ""
+	dt_notep low "Mouse released"
 	return 0
 }
 
@@ -896,6 +964,14 @@ fn boxerplay_mouse(int id, act, btn, int r, int c, mods = "") {
 	local p=${BP[$id]["p"]} b=1 at ar ac
 
 	[ -n "$p" ] || return 0
+	if [ "$act" = unlock ]; then
+		bp_unlocked "$id"
+		return 0
+	fi
+	if [ "$mods" = rel ]; then
+		bp_motion "$id" "$act" "$btn" "$r" "$c"
+		return 0
+	fi
 	case $btn in middle) b=4 ;; right) b=2 ;; esac
 	if [ "${BP[$id]["capmode"]-}" = click ] && [ "${BP[$id]["cap"]}" != 1 ]; then
 		case ${act##*-} in press) bp_capture "$id" 1 ;; esac
