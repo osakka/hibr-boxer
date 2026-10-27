@@ -910,8 +910,9 @@ fn bp_capture(int id, int on) {
 # truth, so a lock it refuses outright leaves the plain capture in place.
 fn bp_lock(int id, int on) {
 	if [ "$on" = 0 ]; then
-		[ "${BP[$id]["lock"]-0}" = 1 ] && dt_pointerlock "$id" off
+		[ "${BP[$id]["lock"]-0}" = 1 ] || return 1
 		BP[$id]["lock"]=0
+		dt_pointerlock "$id" off
 		return 1
 	fi
 	[ "${BP[$id]["rel"]-0}" = 1 ] && [ -z "${BP[$id]["nolock"]-}" ] || return 1

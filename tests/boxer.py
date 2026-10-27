@@ -167,6 +167,41 @@ check("where no display can hold the pointer the capture is the plain one and no
 log, out = lockrun("direct", True, "")
 check("a game with a direct mouse is captured but never locked", log == [] and out.split("|")[1:3] == ["1", "0"], (log, out))
 
+# The same through the desktop's own pointer lock (hibr 0.99.365) on a terminal that answers for it: a click in the
+# relative-mouse game asks for the lock, a report is raw motion for the core, Release Pointer gives it back.
+if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
+    lj = json.load(open(lockbox + "/boxer.json"))
+    lj.update({"title": "Lock Game", "capture": "click", "mouse": "relative"})
+    json.dump(lj, open(lockbox + "/boxer.json", "w"))
+    if os.path.exists(D + "/motion.log"):
+        os.remove(D + "/motion.log")
+    pre = 'retro() { [ "$1" = motion ] && echo "$*" >> %s/motion.log; command retro "$@"; }' % D
+    t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)
+    t.collect(2.5)
+    t.send(sx.press(14, 45) + sx.release(14, 45))
+    t.collect(1.0)
+    check("a click in a relative-mouse game takes the desktop's pointer lock", b"\x1b[?7701h" in t.raw, t.raw[-200:])
+    t.send(b"\x1b[<35;5;-3M")
+    t.collect(0.8)
+    got = open(D + "/motion.log").read() if os.path.exists(D + "/motion.log") else ""
+    check("and a report while it is held reaches the core as raw motion", " 5 -3 0" in got, got)
+    t.send(b"\x1b[21;5~")
+    t.collect(0.8)
+    check("Release Pointer gives it back, and the capture ends with a notice", b"\x1b[?7701l" in t.raw and "Mouse released" in t.raw.decode("utf-8", "replace"), t.raw[-300:])
+    n0 = open(D + "/motion.log").read().count("motion")
+    t.send(b"\x1b[<35;5;-3M")
+    t.collect(0.6)
+    check("after that no more motion goes to the core",
+          open(D + "/motion.log").read().count("motion") == n0, open(D + "/motion.log").read())
+    t.close()
+    t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, [], pre)
+    t.collect(2.5)
+    t.send(sx.press(14, 45) + sx.release(14, 45))
+    t.collect(1.0)
+    check("on a terminal that cannot hold the pointer none is asked for, and the click still captures",
+          b"\x1b[?7701h" not in t.raw and "Mouse captured. f12" in t.raw.decode("utf-8", "replace"), t.raw[-200:])
+    t.close()
+
 # Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
 for conf in ("on", "off"):
     t = desk('sleep 1.5\ndt_closereq "$BID"\nsleep 0.5\necho "[${BP[$BID]["name"]-gone}]" > %s/closed.%s' % (D, conf), box, env={"BX_CONFIRM": conf})
