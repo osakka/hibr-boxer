@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.14
+app boxerplay "A DOS game from a gamebox" 0.15
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -589,6 +589,8 @@ fn bp_start(int id) {
 	read -ra vw <<< "$vo"
 	vopt=()
 	for kv in "${vw[@]}"; do vopt+=(-o "$kv"); done
+	# DOSBox Pure keeps a finished session on a red screen unless told to exit.
+	[ "${BX_AUTOCLOSE-on}" = on ] && vopt+=(-o dosbox_pure_menu_time=0)
 	BP[$id]["p"] := retro open "$BP_CORE" "$conf" -s "$BP_SYS" -S "$box/saves" \
 		-o "dosbox_pure_mouse_input=$mm" -o "dosbox_pure_midi=$midi" "${vopt[@]}" 2>&1 ||
 		{

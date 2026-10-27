@@ -452,6 +452,15 @@ if dbp and os.path.exists(dbp):
                   os.path.exists(ib + "/drives/c/NEWGAME.COM") and di.get("state") == "installed"
                   and "C:\\NEWGAME.COM" in di.get("programs", []), (os.listdir(ib + "/drives/c"), di))
             check("and with one program, that is the one to run", di.get("launch", {}).get("program") == "C:\\NEWGAME.COM", di)
+        # EXIT at the DOS prompt ends the real core only when it is told to exit, which Close When Game Ends does.
+        for ac in ("on", "off"):
+            t = desk('sleep 4\nretro key "${BP[$BID]["p"]}" space tap\nsleep 2\nfor k in e x i t enter; do retro key "${BP[$BID]["p"]}" $k tap; sleep 0.2; done', hb_, False,
+                     {"BP_CORE": dbp, "BX_AUTOCLOSE": ac})
+            t.collect(12.0)
+            tx = t.screen().text()
+            check("EXIT at the DOS prompt %s with Close When Game Ends %s" % ("closes the window" if ac == "on" else "leaves the window", ac),
+                  ("\u2524 Hello \u251c" not in tx) == (ac == "on"), tx[:300])
+            t.close()
         t = desk("", hb_, True, {"BP_CORE": dbp})
         for _ in range(60):
             t.collect(0.25)
