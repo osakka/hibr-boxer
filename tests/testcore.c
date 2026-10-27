@@ -34,6 +34,8 @@ void tc_key(bool down, unsigned code, uint32_t chr, uint16_t mods)
 	(void)chr;
 	(void)mods;
 	tc_keyev++;
+	if (down && chr == 'q')
+		tc_env(RETRO_ENVIRONMENT_SHUTDOWN, 0);
 	if (down)
 		tc_keydown_evs++;
 	else

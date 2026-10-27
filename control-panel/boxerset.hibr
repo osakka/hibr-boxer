@@ -9,7 +9,7 @@
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.6
+app boxerset "The Control Panel pane for Boxer" 0.7
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
 	dt_app bxfield "Games Folder" 9 64 "" "" fixed hidden
@@ -36,11 +36,13 @@ BX_SOUND="${BX_SOUND-on}"
 BX_MOUSE="${BX_MOUSE-direct}"
 BX_CAPTURE="${BX_CAPTURE-click}"
 BX_RELKEY="${BX_RELKEY-f12}"
+BX_CONFIRM="${BX_CONFIRM-on}"
+BX_AUTOCLOSE="${BX_AUTOCLOSE-on}"
 BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
 BX_ART="${BX_ART-off}"
-command -v dt_keep > /dev/null && dt_keep BX_ART BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_CAPTURE BX_RELKEY BX_CARD BX_MIDIDIR BX_MIDI
+command -v dt_keep > /dev/null && dt_keep BX_ART BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_CAPTURE BX_RELKEY BX_CONFIRM BX_AUTOCLOSE BX_CARD BX_MIDIDIR BX_MIDI
 
 # follow is Control Panel > Pictures, as the wallpaper's and YouTube's are.
 BXS_PICS=(follow pixels half)
@@ -111,6 +113,15 @@ fn boxerset_rows(int w) {
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Mouse Capture"
 	CP[$w][$n]["val"]="$BX_CAPTURE"; CP[$w][$n]["key"]=capture
 	n=$((n + 1))
+	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Quitting"; n=$((n + 1))
+	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Confirm On Exit"
+	CP[$w][$n]["wtype"]=bool
+	CP[$w][$n]["val"]=off; [ "$BX_CONFIRM" = on ] && CP[$w][$n]["val"]=on
+	CP[$w][$n]["key"]=confirm; n=$((n + 1))
+	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Close When Game Ends"
+	CP[$w][$n]["wtype"]=bool
+	CP[$w][$n]["val"]=off; [ "$BX_AUTOCLOSE" = on ] && CP[$w][$n]["val"]=on
+	CP[$w][$n]["key"]=autoclose; n=$((n + 1))
 	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Sound"; n=$((n + 1))
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Sound"
 	CP[$w][$n]["wtype"]=bool
@@ -142,6 +153,8 @@ fn boxerset_do(int? w = "", k = "", int? dir = "") {
 	hold) v := cp_next "$BX_HOLD" "$dir" "${BXS_HOLDS[@]}"; BX_HOLD=$v ;;
 	mouse) v := cp_next "$BX_MOUSE" "$dir" "${BXS_MICE[@]}"; BX_MOUSE=$v ;;
 	capture) v := cp_next "$BX_CAPTURE" "$dir" "${BXS_CAPS[@]}"; BX_CAPTURE=$v ;;
+	confirm) [ "$BX_CONFIRM" = on ] && BX_CONFIRM=off || BX_CONFIRM=on ;;
+	autoclose) [ "$BX_AUTOCLOSE" = on ] && BX_AUTOCLOSE=off || BX_AUTOCLOSE=on ;;
 	art) [ "$BX_ART" = on ] && BX_ART=off || BX_ART=on ;;
 	sound) [ "$BX_SOUND" = on ] && BX_SOUND=off || BX_SOUND=on ;;
 	card) v := cp_next "$BX_CARD" "$dir" "${BXS_CARDS[@]}"; BX_CARD=$v ;;

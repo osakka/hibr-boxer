@@ -14,7 +14,7 @@ CORE = ROOT + "/build/testcore.so"
 RETRO = ROOT + "/build/retro.so"
 DESK = HIBR_TREE + "/programs/desktop/desktop.hibr"
 ENVBASE = {"XDG_RUNTIME_DIR": D, "HIBR_RETRO_AUDIO": "none", "BP_CORE": CORE,
-           "BP_SYS": D + "/sys", "BX_CAPTURE": "seamless", "HIBR_MODPATH": ROOT + "/build", "XDG_CACHE_HOME": D + "/cache"}
+           "BP_SYS": D + "/sys", "BX_CAPTURE": "seamless", "BX_CONFIRM": "off", "HIBR_MODPATH": ROOT + "/build", "XDG_CACHE_HOME": D + "/cache"}
 
 
 def gamebox(name="Test Game"):
@@ -136,6 +136,25 @@ tx = t.screen().text()
 check("a second game while one plays says so and names the one running", b"Test Game is already running" in t.raw.replace(b"\x1b[0m", b"") or (b"already running" in t.raw and b"Second Game" in t.raw), tx[:300])
 check("and the second one opens no window and no core", os.path.exists(D + "/second.out") and "[gone|none]" in open(D + "/second.out").read() and tx.count("Second Game") == 0, tx[:300])
 t.close()
+
+# Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
+for conf in ("on", "off"):
+    t = desk('sleep 1.5\ndt_closereq "$BID"\nsleep 0.5\necho "[${BP[$BID]["name"]-gone}]" > %s/closed.%s' % (D, conf), box, env={"BX_CONFIRM": conf})
+    t.collect(3.5)
+    tx = t.screen().text()
+    left = open(D + "/closed." + conf).read() if os.path.exists(D + "/closed." + conf) else ""
+    if conf == "on":
+        check("closing a playing game asks first", "Quit Test Game?" in tx and "[Test Game]" in left, (tx[:200], left))
+    else:
+        check("with Confirm On Exit off the window just closes", "[gone]" in left and "Quit" not in tx, (tx[:200], left))
+    t.close()
+for ac in ("on", "off"):
+    t = desk('sleep 1.5\nretro key "${BP[$BID]["p"]}" q tap', box, env={"BX_AUTOCLOSE": ac, "BX_CONFIRM": "off"})
+    t.collect(6.0)
+    tx = t.screen().text()
+    check("a game that ends %s" % ("closes its window" if ac == "on" else "leaves its window when Close When Game Ends is off"),
+          ("Test Game" not in tx) == (ac == "on"), tx[:200])
+    t.close()
 
 # Get Info opens the settings in a window of their own; a field changed there is written into the box.
 t = appdesk("boxerinfo", os.path.join(shelf, "Beta Racer.boxer"))
@@ -459,14 +478,14 @@ out, err = withhome("echo \"shelf=$BX_SHELF\"")
 check("the default shelf is Dos Games in the home folder once it is there", "shelf=%s/Dos Games" % home in out, out + err)
 q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\n"
                     "declare -gA CP; boxerset_rows 40 > /dev/null\n"
-                    "for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13; do echo \"$i=${CP[40][$i][text]}|${CP[40][$i][val]}\"; done\n"
+                    "for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do echo \"$i=${CP[40][$i][text]}|${CP[40][$i][val]}\"; done\n"
                     "BX_SHELF=x; boxerset_do 40 mouse 1; echo \"mouse=$BX_MOUSE\"; boxerset_do 40 sound 1; echo \"sound=$BX_SOUND\""
                     % (load("console"), DESK, ROOT, HIBR_TREE + "/programs/desktop", ROOT)],
                    capture_output=True, text=True, env=dict(os.environ, HOME=home, XDG_RUNTIME_DIR=D, BX_SHELF=home + "/Dos Games"),
                    timeout=60)
 out = q.stdout
 check("the pane lists the shelf folder, rendering, shape, full screen key, key hold, mouse and sound",
-      all(w in out for w in ("Folder", "Rendering", "Shape", "Full Screen Key", "Release Mouse Key", "Key Held", "Mouse", "Mouse Capture", "Sound")), out + q.stderr)
+      all(w in out for w in ("Folder", "Rendering", "Shape", "Full Screen Key", "Release Mouse Key", "Key Held", "Mouse", "Mouse Capture", "Confirm On Exit", "Close When Game Ends", "Sound")), out + q.stderr)
 check("a row steps through its choices: mouse direct goes to relative, sound toggles",
       "mouse=relative" in out and "sound=off" in out, out + q.stderr)
 check("the pane has Fetch Box Art, off until it is turned on", "Fetch Box Art|off" in out, out + q.stderr)

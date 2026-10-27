@@ -26,13 +26,14 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.13
+app boxerplay "A DOS game from a gamebox" 0.14
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
 command -v dt_keepstate > /dev/null && dt_keepstate boxerplay BP
 
 declare -gA BP BPJ
+BP_QUITID=
 BP_CORE="${BP_CORE-dosbox_pure}"
 BP_SYS="${BP_SYS-${XDG_DATA_HOME:-$HOME/.local/share}/hibr/retro/system}"
 
@@ -779,7 +780,7 @@ fn boxerplay_dirty(int id) {
 
 	[ -n "$p" ] || return 1
 	retro wake "$p" 2> /dev/null
-	retro frame "$p" 2> /dev/null || return 1
+	retro frame "$p" 2> /dev/null || { bp_ended "$id"; return 1; }
 	now := dt_ms
 	left=$((${BP[$id]["at"]:-0} + ${DT_TERMMS:-70} - now))
 	if [ "$left" -gt 0 ]; then
@@ -789,9 +790,40 @@ fn boxerplay_dirty(int id) {
 	return 0
 }
 
-fn boxerplay_idle(int id) {
-	[ -n "${BP[$id]["p"]}" ] && retro wake "${BP[$id]["p"]}" 2> /dev/null
+# A game that has ended (DOS's EXIT, or the core shutting down) closes its
+# window, unless Close When Game Ends is off, which leaves the last picture.
+# Asked when no new frame came, which is all an ended core ever makes.
+fn bp_ended(int id) {
+	local p=${BP[$id]["p"]}
+	local -A st
+
+	[ -n "$p" ] && [ "${BX_AUTOCLOSE-on}" = on ] || return 0
+	st := retro info "$p" 2> /dev/null || return 0
+	[ "${st[ended]-0}" = 1 ] && dt_del "$id"
 	return 0
+}
+
+fn boxerplay_idle(int id) {
+	[ -n "${BP[$id]["p"]}" ] || return 0
+	retro wake "${BP[$id]["p"]}" 2> /dev/null
+	bp_ended "$id"
+	return 0
+}
+
+# Closing a game that is playing asks first, when Confirm On Exit is on.
+fn boxerplay_canclose(int id) {
+	[ "${BX_CONFIRM-on}" = on ] || return 0
+	[ -n "${BP[$id]["p"]}" ] || return 0
+	BP_QUITID=$id
+	dt_confirm "Quit ${BP[$id]["name"]}? Unsaved progress is lost." bp_quityes
+	return 1
+}
+
+bp_quityes() {
+	local id=${BP_QUITID-}
+
+	BP_QUITID=
+	[ -n "$id" ] && [ -n "${BP[$id]["box"]-}" ] && dt_del "$id"
 }
 
 fn boxerplay_key(int id, key) {

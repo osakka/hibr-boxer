@@ -867,6 +867,9 @@ out:
 	r->ended = 1;
 	pthread_cond_broadcast(&r->cv);
 	pthread_mutex_unlock(&r->mu);
+	/* The desktop is woken as for a frame, so it finds out the core has ended. */
+	if (write(r->wake[1], "e", 1) < 0 && errno != EAGAIN)
+		lg(HIBR_LDBG, "retro: wake: %s", strerror(errno));
 	pthread_setspecific(rl_kcur, 0);
 	return 0;
 }
