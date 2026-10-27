@@ -194,6 +194,16 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     check("after that no more motion goes to the core",
           open(D + "/motion.log").read().count("motion") == n0, open(D + "/motion.log").read())
     t.close()
+    # A capture that has had no report when Release Pointer is pressed (the click's own release never came) is let go, not taken for a refusal.
+    t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)
+    t.collect(2.5)
+    t.send(sx.press(14, 45))
+    t.collect(1.0)
+    t.send(b"\x1b[21;5~")
+    t.collect(0.8)
+    check("Release Pointer before the pointer has moved lets the capture go, as it should",
+          b"\x1b[?7701h" in t.raw and "Mouse released" in t.raw.decode("utf-8", "replace"), t.raw[-300:])
+    t.close()
     t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, [], pre)
     t.collect(2.5)
     t.send(sx.press(14, 45) + sx.release(14, 45))
@@ -720,6 +730,13 @@ check("and the buttons are not drawn over the credits", "OK" in tx and "thumbnai
 t.send(b"\r")
 t.collect(0.6)
 check("and Enter closes it", "tribute to Boxer" not in t.screen().text(), t.screen())
+t.close()
+# On a short terminal the blank lines go before any credit does.
+t = Term(pa, rows=24, cols=80, settle=1.0, env=ENVBASE)
+t.collect(1.0)
+tx = t.screen().text()
+check("About on a 24-row terminal still names DOSBox Pure, DOSBox, Munt, Nuked and libretro, and has its button",
+      all(w in tx for w in ("DOSBox Pure", "DOSBox Team", "Munt", "Nuke.YKT", "libretro", "OK")), t.screen())
 t.close()
 
 def boxnamed(n):

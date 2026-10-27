@@ -22,7 +22,7 @@ app boxer "DOS games, one folder to a game" 1.11
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
 command -v dt_app > /dev/null && dt_app boxer "Boxer" 21 72 "" "▣" fixed
-command -v dt_app > /dev/null && dt_app boxerabout "About Boxer" 28 78 "" "" fixed hidden
+command -v dt_app > /dev/null && dt_app boxerabout "About Boxer" 24 78 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxercover "Fetch Cover" 10 66 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxerdone "Game Is Already Installed" 10 66 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxerinfo "Game Settings" 20 60 "" "" fixed hidden
@@ -968,7 +968,7 @@ fn boxerdone_close(int id) {
 
 # About Boxer: what this is a tribute to, and whose work it runs on.
 fn boxer_about() {
-	local h=28 w=78 rid
+	local h=24 w=78 rid
 
 	dt_dlgat "$h" "$w"
 	rid := dt_new "About Boxer" "$DT_DLGH" "$DT_DLGW" "$DT_DLGR" "$DT_DLGC" boxerabout
@@ -976,32 +976,36 @@ fn boxer_about() {
 }
 
 fn boxerabout_draw(int id, int h, int w, int row, int col) {
-	local i=2 l
+	local i=2 l n
 	local -a lines=(
 		"Boxer for hibr"
 		""
-		"A tribute to Boxer, the DOS game box for the Mac, by Alun Bestor,"
-		"who made playing old DOS games as easy as keeping them on a shelf."
-		"  https://boxerapp.com"
-		"  https://github.com/alunbestor/Boxer"
+		"A tribute to Boxer, the DOS game box for the Mac, by Alun Bestor, who made"
+		"playing old DOS games as easy as keeping them on a shelf. How a game is"
+		"recognised, installed and shelved follows Boxer's own rules, read from its"
+		"source (GPL-2.0, Alun Bestor and contributors)."
+		"  https://boxerapp.com    https://github.com/alunbestor/Boxer"
 		""
-		"How a game is recognised, installed and shelved here follows Boxer's own"
-		"rules, read from its source (GPL-2.0, Alun Bestor and contributors)."
-		""
-		"Games run in DOSBox Pure, a libretro core by Bernhard Schelling, which is"
-		"built on DOSBox by the DOSBox Team. Everything that makes a game sound"
-		"and look like it did is theirs, and the least we can do is say so:"
+		"Games run in DOSBox Pure, a libretro core by Bernhard Schelling, built on"
+		"DOSBox by the DOSBox Team; the sound and the look are theirs, and we say so:"
 		"  DOSBox Pure   https://codeberg.org/schelling/dosbox-pure"
 		"  DOSBox        https://www.dosbox.com"
-		"Inside it, the MT-32 is Munt (Dean Beeler, Jerome Fisher, Sergey V."
-		"Mikayev), and the OPL3 and the SC-55 are Nuked, by Nuke.YKT. The core"
-		"speaks libretro, from the libretro project (https://www.libretro.com)."
-		"DOSBox Pure and DOSBox are GPL-2.0 or later; Munt is LGPL-2.1 or later."
+		"Inside, the MT-32 is Munt (Dean Beeler, Jerome Fisher, Sergey V. Mikayev),"
+		"the OPL3 and SC-55 are Nuked (Nuke.YKT). It speaks libretro."
+		"GPL-2.0 or later (DOSBox Pure, DOSBox); LGPL-2.1 or later (Munt)."
 		""
-		"Box art, when fetching is on, comes from the libretro thumbnails project."
-		""
+		"Box art, when fetching is on, is from the libretro thumbnails project."
 		"Boxer for hibr is MIT, and runs on hibr."
 	)
+
+	# A short terminal drops the blank lines before it drops any credit.
+	n=$((h - 5))
+	if [ "${#lines[@]}" -gt "$n" ]; then
+		local -a keep=()
+		for l in "${lines[@]}"; do [ -n "$l" ] && keep+=("$l"); done
+		lines=("${keep[@]}")
+	fi
+	lines=("${lines[@]:0:$n}")
 
 	dt_wclear "$id"
 	for l in "${lines[@]}"; do

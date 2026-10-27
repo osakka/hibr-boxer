@@ -920,6 +920,7 @@ fn bp_lock(int id, int on) {
 	dt_pointerlock "$id" on || return 1
 	BP[$id]["lock"]=1
 	BP[$id]["lockseen"]=
+	BP[$id]["locktime"] := dt_ms
 	return 0
 }
 
@@ -943,12 +944,16 @@ fn bp_motion(int id, act, btn, int dy, int dx) {
 }
 
 # The desktop ended the lock: its key, focus moving, a menu, or it would not. A
-# lock that never gave a report was refused, so the capture stays as a plain one
-# and the lock is not asked for again in this window; any other end lets it all go.
+# lock that gave no report and ended at once was refused, so the capture stays as
+# a plain one and the lock is not asked for again in this window; any other end,
+# a key pressed before the pointer moved included, lets it all go.
 fn bp_unlocked(int id) {
+	local now
+
 	[ "${BP[$id]["lock"]-0}" = 1 ] || return 0
 	BP[$id]["lock"]=0
-	if [ -z "${BP[$id]["lockseen"]-}" ]; then
+	now := dt_ms
+	if [ -z "${BP[$id]["lockseen"]-}" ] && [ $((now - ${BP[$id]["locktime"]:-0})) -lt 400 ]; then
 		BP[$id]["nolock"]=1
 		return 0
 	fi
