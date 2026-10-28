@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.17
+app boxerplay "A DOS game from a gamebox" 0.18
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -900,7 +900,12 @@ fn bp_capture(int id, int on) {
 		if [ "$on" = 1 ]; then dt_pointer "$id" none; else dt_pointer "$id" ""; fi
 	fi
 	if [ "$on" = 1 ]; then
-		dt_notep low "Mouse captured. $key lets it go"
+		if [ "${BP[$id]["rel"]-0}" != 1 ] && [ -z "${BP[$id]["hinted"]-}" ]; then
+			BP[$id]["hinted"]=1
+			dt_notep low "Mouse captured, $key lets go. Doom-like? Game > Relative Mouse"
+		else
+			dt_notep low "Mouse captured. $key lets it go"
+		fi
 	fi
 	return 0
 }
@@ -1101,6 +1106,36 @@ fn bp_grab(int id) {
 	return 0
 }
 
+# Game > Relative Mouse: the mouse for games that turn with it (Doom and the like)
+# instead of pointing (the default), now and for this game from here on. The
+# core is told at once, the choice is written into the box, and a game that is
+# captured asks for the pointer lock, or gives it back, there and then.
+fn bp_mouse(int id) {
+	local p=${BP[$id]["p"]-} box=${BP[$id]["box"]-} new=relative core=virtual
+
+	[ -n "$p" ] || return 0
+	if [ "${BP[$id]["rel"]-0}" = 1 ]; then new=direct core=direct; fi
+	BP[$id]["rel"]=0
+	[ "$new" = relative ] && BP[$id]["rel"]=1
+	BP[$id]["nolock"]=
+	retro option "$p" dosbox_pure_mouse_input "$core" 2> /dev/null
+	if [ -r "$box/boxer.json" ] && json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null; then
+		json set BPJ .mouse "$new" -s
+		json emit BPJ -p > "$box/boxer.json"
+	fi
+	if [ "$new" = relative ]; then
+		if [ "${BP[$id]["cap"]-0}" = 1 ] && bp_lock "$id" 1; then
+			dt_notep low "Relative mouse on, and the pointer is held: ${DT_KEYS["ptrrelease"]-ctrl-f10} lets it go"
+		else
+			dt_notep low "Relative mouse on for this game: the mouse turns it instead of pointing"
+		fi
+	else
+		bp_lock "$id" 0
+		dt_notep low "Relative mouse off for this game: the mouse points"
+	fi
+	return 0
+}
+
 fn bp_reset(int id) {
 	retro reset "${BP[$id]["p"]}" 2> /dev/null
 	return 0
@@ -1147,5 +1182,6 @@ boxerplay_menus() {
 	dt_menu "Game"
 	dt_item "Pause" p bp_toggle "$DT_FOCUS"
 	dt_item "Capture Mouse" g bp_grab "$DT_FOCUS"
+	dt_item "Relative Mouse" m bp_mouse "$DT_FOCUS"
 	dt_item "Restart" r bp_reset "$DT_FOCUS"
 }

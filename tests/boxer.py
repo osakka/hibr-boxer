@@ -204,6 +204,41 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     check("Release Pointer before the pointer has moved lets the capture go, as it should",
           b"\x1b[?7701h" in t.raw and "Mouse released" in t.raw.decode("utf-8", "replace"), t.raw[-300:])
     t.close()
+    # A capture that has had no report when Release Pointer is pressed (the click's own release never came) is let go, not taken for a refusal.
+    t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)
+    t.collect(2.5)
+    t.send(sx.press(14, 45))
+    t.collect(1.0)
+    t.send(b"\x1b[21;5~")
+    t.collect(0.8)
+    check("Release Pointer before the pointer has moved lets the capture go, as it should",
+          b"\x1b[?7701h" in t.raw and "Mouse released" in t.raw.decode("utf-8", "replace"), t.raw[-300:])
+    t.close()
+    # A game on the default direct mouse says once, when it is captured, where the relative mouse is; the Game menu
+    # switches it while playing, the core is told, the box remembers, and a captured game asks for the lock at once.
+    lj = json.load(open(lockbox + "/boxer.json"))
+    lj.update({"title": "Lock Game", "capture": "click", "mouse": "direct"})
+    json.dump(lj, open(lockbox + "/boxer.json", "w"))
+    if os.path.exists(D + "/lock.dtlog"):
+        os.remove(D + "/lock.dtlog")
+    t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)
+    t.collect(2.5)
+    t.send(sx.press(14, 45) + sx.release(14, 45))
+    t.collect(1.0)
+    txt = t.raw.decode("utf-8", "replace")
+    check("a captured game on the direct mouse says where the relative mouse is, and asks for no lock",
+          "Doom-like?" in txt and "Mouse captured, f12 lets go" in txt and b"\x1b[?7701h" not in t.raw and "mouse is not relative" in rd(), (txt[-200:], rd()))
+    t.collect(4.0)
+    t.send(b"\x1b[21~\x1b[C\x1b[C\x1b[C")
+    t.collect(0.8)
+    check("and the Game menu has Relative Mouse", "Capture Mouse" in t.screen().text() and "Relative Mouse" in t.screen().text(), t.screen())
+    t.send(b"m")
+    t.collect(1.0)
+    lj = json.load(open(lockbox + "/boxer.json"))
+    check("choosing it writes mouse relative into the box, and a captured game asks for the lock at once",
+          lj.get("mouse") == "relative" and b"\x1b[?7701h" in t.raw and "pointer lock: asked" in rd(), (lj.get("mouse"), rd()))
+    t.close()
+
     t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, [], pre)
     t.collect(2.5)
     t.send(sx.press(14, 45) + sx.release(14, 45))
@@ -211,6 +246,7 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     check("on a terminal that cannot hold the pointer none is asked for, and the click still captures",
           b"\x1b[?7701h" not in t.raw and "Mouse captured. f12" in t.raw.decode("utf-8", "replace"), t.raw[-200:])
     t.close()
+
 
 # Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
 for conf in ("on", "off"):
