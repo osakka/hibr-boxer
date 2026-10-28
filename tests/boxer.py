@@ -248,6 +248,24 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     t.close()
 
 
+# The full-screen key asks the desktop for the whole display where it can (hibr #405), and zooms where it cannot.
+if os.path.exists(D + "/fs.log"):
+    os.remove(D + "/fs.log")
+t = desk("", box, False, {}, None, 'fn dt_fullscreen(int id, how) { echo "$id:$how" >> %s/fs.log; return 0; }' % D)
+t.collect(2.0)
+t.send(b"\x1b[23~")
+t.collect(1.0)
+check("the full-screen key asks the desktop for full screen (toggle) when it has it",
+      os.path.exists(D + "/fs.log") and open(D + "/fs.log").read().split()[-1].endswith(":toggle"), open(D + "/fs.log").read() if os.path.exists(D + "/fs.log") else "no call")
+t.close()
+t = desk("", box, False, {}, None, "")
+t.collect(2.0)
+w0 = t.screen().text()
+t.send(b"\x1b[23~")
+t.collect(1.0)
+check("and zooms the window as before when it does not", t.screen().text() != w0, t.screen())
+t.close()
+
 # Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
 for conf in ("on", "off"):
     t = desk('sleep 1\ndt_closereq "$BID"\nsleep 0.2\necho "[${BP[$BID]["name"]-gone}]" > %s/closed.%s' % (D, conf), box, env={"BX_CONFIRM": conf})

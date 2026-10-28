@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.19
+app boxerplay "A DOS game from a gamebox" 0.20
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -839,6 +839,23 @@ bp_quityes() {
 	[ -n "$id" ] && [ -n "${BP[$id]["box"]-}" ] && dt_del "$id"
 }
 
+# The full-screen key: the whole display with no bar or frame where hibr can (dt_fullscreen,
+# hibr #405), else the window made as large as the desktop allows (dt_zoom), as before.
+fn bp_full(int id) {
+	if dt_has dt_fullscreen && dt_fullscreen "$id" toggle; then
+		return 0
+	fi
+	dt_zoom "$id"
+	return 0
+}
+
+# The desktop tells a window when full screen starts or ends, ended by it or not.
+fn boxerplay_fullscreen(int id, on) {
+	BP[$id]["fs"]=0
+	[ "$on" = on ] && BP[$id]["fs"]=1
+	return 0
+}
+
 fn boxerplay_key(int id, key) {
 	local p=${BP[$id]["p"]}
 
@@ -848,7 +865,7 @@ fn boxerplay_key(int id, key) {
 	fi
 	[ -n "$p" ] || return 1
 	if [ "$key" = "$BX_FULLKEY" ]; then
-		dt_zoom "$id"
+		bp_full "$id"
 		return 0
 	fi
 	if [ "$key" = "${BX_RELKEY-f12}" ] && [ "${BP[$id]["cap"]-}" = 1 ]; then
