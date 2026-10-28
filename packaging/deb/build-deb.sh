@@ -17,7 +17,7 @@ SRC=$(cd "$(dirname "$0")/../.." && pwd)
 CORES=${1:?usage: build-deb.sh CORES [outdir]}
 OUT=${2:-$SRC/build/deb}
 HIBR=${HIBR:-$SRC/../hibr}
-VER=${HR_VERSION:-0.1.6}
+VER=${HR_VERSION:-0.1.7}
 REV=${DEB_REVISION:-1}
 ARCH=$(dpkg --print-architecture)
 PKG=hibr-retro_${VER}-${REV}_${ARCH}
@@ -40,6 +40,7 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/lib/hibr/cores" "$STAGE/usr/share/doc/hibr-retro"
 install -m 755 build/retro.so "$STAGE/usr/lib/hibr/retro.so"
 install -m 755 "$CORE" "$STAGE/usr/lib/hibr/cores/dosbox_pure_libretro.so"
+[ -f "$CORE.build" ] && [ -f "$CORES/$(sed -n 's/^source-archive: //p' "$CORE.build")" ] || { echo "build-deb: no source archive beside $CORE (run make core)" >&2; exit 1; }
 [ -f "$CORE.build" ] && install -m 644 "$CORE.build" "$STAGE/usr/share/doc/hibr-retro/dosbox_pure_libretro.build"
 strip --strip-unneeded "$STAGE/usr/lib/hibr/retro.so" "$STAGE/usr/lib/hibr/cores/dosbox_pure_libretro.so"
 
@@ -52,6 +53,9 @@ PIN=$(grep '^dosbox_pure ' cores/PINS)
 set -- $PIN
 DBURL=${2%%,*} DBTAG=$3 DBCOMMIT=$4
 [ -f "$CORE.build" ] && DBURL=$(sed -n 's/^source: //p' "$CORE.build")
+SRCARCH= SRCSUM=
+[ -f "$CORE.build" ] && SRCARCH=$(sed -n 's/^source-archive: //p' "$CORE.build") SRCSUM=$(sed -n 's/^source-sha256: //p' "$CORE.build")
+SRCURL=https://osakka.github.io/hibr-apt/pool/main/h/hibr-retro/$SRCARCH
 cat > "$STAGE/usr/share/doc/hibr-retro/copyright" <<COPY
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: hibr-retro
@@ -67,8 +71,11 @@ License: GPL-2+
 Comment: DOSBox Pure, built unmodified from $DBURL
  at tag $DBTAG, commit $DBCOMMIT, by cores/build.sh in the source above.
  That repository is the source of this binary, and dosbox_pure_libretro.build
- in this directory records exactly what was built. The full text of the GPL
- is in /usr/share/common-licenses/GPL-2.
+ in this directory records exactly what was built. The same source, as the
+ tarball the binary was built from, is kept with this package:
+ $SRCURL
+ (sha256 $SRCSUM). The full text of the GPL is in
+ /usr/share/common-licenses/GPL-2.
 
 Files: usr/lib/hibr/cores/dosbox_pure_libretro.so
 Copyright: Dean Beeler, Jerome Fisher, Sergey V. Mikayev (Munt MT-32 emulation);
