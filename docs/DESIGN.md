@@ -346,8 +346,10 @@ a setting:
 4. An older `retro` module takes the whole cell of a fractional position, and an
    older hibr never calls `_hover`: steps 2 and 3.
 
-Hiding the pointer over the game is asked of the desktop (`dt_pointer`, hibr 0.99.311, #373) and is a no-op where it cannot be done. Confining it is not offered.
+Hiding the pointer over the game is asked of the desktop (`dt_pointer`, hibr 0.99.311, #373) and is a no-op where it cannot be done.
 Capture Mouse says which step the session is on.
+
+**Pointer lock** (hibr #379 with Blit's, blit#139; Blit 0.2.42, hibr 0.99.365) is the step above step 1 for a game whose mouse is relative. When such a game is captured on a click and the desktop says a display can hold the pointer (`dt_ptrlockcan`), Boxer asks for it (`dt_pointerlock "$id" on`): the pointer stays still and the window is told how far it moved in raw counts (`_mouse` with `rel`, DY then DX), which `retro motion` hands to the core as the mouse's own, so Doom and the like turn without end. The desktop gives it back on its Release Pointer key, a menu, focus moving or the display letting go, and tells the window (`_mouse ... unlock`); that is taken as the truth. A lock refused outright, an unlock within 400 ms with no report, leaves the plain capture and is not asked for again in that window. Where no display can hold the pointer (kitty, foot) the game is let go at the window's edge, as it was.
 
 **Frame cost.** ADR 0037 measured film frames: half blocks 0.5 ms / 14 kB at
 100x34 cells, sixel 23 ms / 34 kB, kitty 6.8 ms / 351 kB at half resolution.
