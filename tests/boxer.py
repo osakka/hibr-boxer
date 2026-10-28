@@ -173,9 +173,10 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     lj = json.load(open(lockbox + "/boxer.json"))
     lj.update({"title": "Lock Game", "capture": "click", "mouse": "relative"})
     json.dump(lj, open(lockbox + "/boxer.json", "w"))
-    if os.path.exists(D + "/motion.log"):
-        os.remove(D + "/motion.log")
-    pre = 'retro() { [ "$1" = motion ] && echo "$*" >> %s/motion.log; command retro "$@"; }' % D
+    if os.path.exists(D + "/lock.dtlog"):
+        os.remove(D + "/lock.dtlog")
+    pre = 'dt_log() { echo "$*" >> %s/lock.dtlog; }' % D
+    rd = lambda: open(D + "/lock.dtlog").read() if os.path.exists(D + "/lock.dtlog") else ""
     t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)
     t.collect(2.5)
     t.send(sx.press(14, 45) + sx.release(14, 45))
@@ -183,16 +184,15 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     check("a click in a relative-mouse game takes the desktop's pointer lock", b"\x1b[?7701h" in t.raw, t.raw[-200:])
     t.send(b"\x1b[<35;5;-3M")
     t.collect(0.8)
-    got = open(D + "/motion.log").read() if os.path.exists(D + "/motion.log") else ""
-    check("and a report while it is held reaches the core as raw motion", " 5 -3 0" in got, got)
+    check("and a report while it is held reaches the window as motion, and the desktop's log says so for a run read afterwards",
+          "pointer lock: asked" in rd() and "holding: the first report came" in rd(), rd())
     t.send(b"\x1b[21;5~")
     t.collect(0.8)
     check("Release Pointer gives it back, and the capture ends with a notice", b"\x1b[?7701l" in t.raw and "Mouse released" in t.raw.decode("utf-8", "replace"), t.raw[-300:])
-    n0 = open(D + "/motion.log").read().count("motion")
-    t.send(b"\x1b[<35;5;-3M")
-    t.collect(0.6)
-    check("after that no more motion goes to the core",
-          open(D + "/motion.log").read().count("motion") == n0, open(D + "/motion.log").read())
+    check("and the log says it ended", "ended: the desktop gave the pointer back" in rd(), rd())
+    t.send(sx.press(14, 45) + sx.release(14, 45))
+    t.collect(1.0)
+    check("a click after that takes the lock again, so the release really ended it", rd().count("pointer lock: asked") == 2, rd())
     t.close()
     # A capture that has had no report when Release Pointer is pressed (the click's own release never came) is let go, not taken for a refusal.
     t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)

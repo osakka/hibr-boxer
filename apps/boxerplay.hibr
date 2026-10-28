@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.16
+app boxerplay "A DOS game from a gamebox" 0.17
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -905,19 +905,46 @@ fn bp_capture(int id, int on) {
 	return 0
 }
 
+# A line in the desktop's log about the pointer lock, so a run that did not lock can say why.
+fn bp_lockwhy(int id, text) {
+	dt_has dt_log && dt_log "boxer: ${BP[$id]["name"]-game} (window $id): pointer lock: $text"
+	return 0
+}
+
 # Ask the desktop to hold the pointer still for a game with a relative mouse, or
 # give it back: status 0 when the request went out. The desktop's unlock is the
 # truth, so a lock it refuses outright leaves the plain capture in place.
 fn bp_lock(int id, int on) {
+	local st
+
 	if [ "$on" = 0 ]; then
 		[ "${BP[$id]["lock"]-0}" = 1 ] || return 1
 		BP[$id]["lock"]=0
 		dt_pointerlock "$id" off
 		return 1
 	fi
-	[ "${BP[$id]["rel"]-0}" = 1 ] && [ -z "${BP[$id]["nolock"]-}" ] || return 1
-	dt_has dt_ptrlockcan && dt_has dt_pointerlock && dt_ptrlockcan || return 1
-	dt_pointerlock "$id" on || return 1
+	if [ "${BP[$id]["rel"]-0}" != 1 ]; then
+		bp_lockwhy "$id" "not asked: this game's mouse is not relative (Get Info > Mouse, or Control Panel > Boxer > Mouse)"
+		return 1
+	fi
+	if [ -n "${BP[$id]["nolock"]-}" ]; then
+		bp_lockwhy "$id" "not asked: refused earlier in this window"
+		return 1
+	fi
+	if ! dt_has dt_ptrlockcan || ! dt_has dt_pointerlock; then
+		bp_lockwhy "$id" "not asked: this hibr has no pointer lock"
+		return 1
+	fi
+	if ! dt_ptrlockcan; then
+		bp_lockwhy "$id" "not asked: dt_ptrlockcan says no display can hold the pointer"
+		return 1
+	fi
+	dt_pointerlock "$id" on && st=0 || st=$?
+	if [ "$st" != 0 ]; then
+		bp_lockwhy "$id" "not taken: dt_pointerlock on returned $st (the window has no focus, or no display can)"
+		return 1
+	fi
+	bp_lockwhy "$id" "asked"
 	BP[$id]["lock"]=1
 	BP[$id]["lockseen"]=
 	BP[$id]["locktime"] := dt_ms
@@ -938,6 +965,7 @@ fn bp_motion(int id, act, btn, int dy, int dx) {
 	wheeldown) w=-1; b=${BP[$id]["btn"]:-0} ;;
 	*) ;;
 	esac
+	[ -n "${BP[$id]["lockseen"]-}" ] || bp_lockwhy "$id" "holding: the first report came ($act $btn $dy $dx)"
 	BP[$id]["lockseen"]=1
 	retro motion "$p" "$dx" "$dy" "$b" "$w"
 	return 0
@@ -954,9 +982,11 @@ fn bp_unlocked(int id) {
 	BP[$id]["lock"]=0
 	now := dt_ms
 	if [ -z "${BP[$id]["lockseen"]-}" ] && [ $((now - ${BP[$id]["locktime"]:-0})) -lt 400 ]; then
+		bp_lockwhy "$id" "refused: unlock after $((now - ${BP[$id]["locktime"]:-0})) ms with no report; the plain capture stays"
 		BP[$id]["nolock"]=1
 		return 0
 	fi
+	bp_lockwhy "$id" "ended: the desktop gave the pointer back; released"
 	BP[$id]["cap"]=0
 	dt_has dt_pointer && dt_pointer "$id" ""
 	dt_notep low "Mouse released"
