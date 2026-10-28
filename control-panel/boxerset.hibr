@@ -9,7 +9,7 @@
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.7
+app boxerset "The Control Panel pane for Boxer" 0.8
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
 	dt_app bxfield "Games Folder" 9 64 "" "" fixed hidden
@@ -33,7 +33,13 @@ BX_ASPECT="${BX_ASPECT-4:3}"
 BX_FULLKEY="${BX_FULLKEY-alt-enter}"
 BX_HOLD="${BX_HOLD-120}"
 BX_SOUND="${BX_SOUND-on}"
-BX_MOUSE="${BX_MOUSE-direct}"
+BX_MOUSE="${BX_MOUSE-relative}"
+# The mouse was direct until BX_MOUSEV 2; a setting still saying direct was the old default, not a choice.
+BX_MOUSEV="${BX_MOUSEV-}"
+if [ "$BX_MOUSEV" != 2 ]; then
+	[ "$BX_MOUSE" = direct ] && BX_MOUSE=relative
+	BX_MOUSEV=2
+fi
 BX_CAPTURE="${BX_CAPTURE-click}"
 BX_RELKEY="${BX_RELKEY-f12}"
 BX_CONFIRM="${BX_CONFIRM-on}"
@@ -42,7 +48,7 @@ BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
 BX_ART="${BX_ART-off}"
-command -v dt_keep > /dev/null && dt_keep BX_ART BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_CAPTURE BX_RELKEY BX_CONFIRM BX_AUTOCLOSE BX_CARD BX_MIDIDIR BX_MIDI
+command -v dt_keep > /dev/null && dt_keep BX_ART BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_MOUSEV BX_CAPTURE BX_RELKEY BX_CONFIRM BX_AUTOCLOSE BX_CARD BX_MIDIDIR BX_MIDI
 
 # follow is Control Panel > Pictures, as the wallpaper's and YouTube's are.
 BXS_PICS=(follow pixels half)

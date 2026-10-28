@@ -14,7 +14,7 @@ CORE = ROOT + "/build/testcore.so"
 RETRO = ROOT + "/build/retro.so"
 DESK = HIBR_TREE + "/programs/desktop/desktop.hibr"
 ENVBASE = {"XDG_RUNTIME_DIR": D, "HIBR_RETRO_AUDIO": "none", "BP_CORE": CORE,
-           "BP_SYS": D + "/sys", "BX_CAPTURE": "seamless", "BX_CONFIRM": "off", "HIBR_MODPATH": ROOT + "/build", "XDG_CACHE_HOME": D + "/cache"}
+           "BP_SYS": D + "/sys", "BX_CAPTURE": "seamless", "BX_CONFIRM": "off", "BX_MOUSE": "direct", "BX_MOUSEV": "2", "HIBR_MODPATH": ROOT + "/build", "XDG_CACHE_HOME": D + "/cache"}
 
 
 def gamebox(name="Test Game"):
@@ -250,7 +250,7 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
 
 # Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
 for conf in ("on", "off"):
-    t = desk('sleep 1.5\ndt_closereq "$BID"\nsleep 0.5\necho "[${BP[$BID]["name"]-gone}]" > %s/closed.%s' % (D, conf), box, env={"BX_CONFIRM": conf})
+    t = desk('sleep 1\ndt_closereq "$BID"\nsleep 0.2\necho "[${BP[$BID]["name"]-gone}]" > %s/closed.%s' % (D, conf), box, env={"BX_CONFIRM": conf})
     t.collect(3.5)
     tx = t.screen().text()
     left = open(D + "/closed." + conf).read() if os.path.exists(D + "/closed." + conf) else ""
@@ -547,6 +547,10 @@ if dbp and os.path.exists(dbp):
             got = [x for x in cells(t.screen()) if not (x[0] <= 5 and x[1] <= 14)]
             check("a pointer reported in pixels at row %d, column %d (hover Auto) puts DOS's pointer in that cell: %s" % (pr, pc, got[:1]),
                   bool(got) and abs(got[0][0] - pr) <= 1 and abs(got[0][1] - pc) <= 1, got[:3])
+        # Closing a window on the real core ends a core and, for an installer, finishes the install, which is file work done
+        # while the desktop reads nothing: the console says so (a descriptor ready for 2 s with nothing reading it), which is
+        # its way of noticing a slow close and not a shell error. Only that note, only for this stretch.
+        errs0 = len(sx.ERRS)
         t.close()
         # The installer, on the real core: a game with an installer is set up to run it from D:, the installer puts a
         # file on C:, and closing the window finishes the install: the game is installed, its programs found.
@@ -567,11 +571,17 @@ if dbp and os.path.exists(dbp):
                   os.path.exists(ib + "/drives/c/NEWGAME.COM") and di.get("state") == "installed"
                   and "C:\\NEWGAME.COM" in di.get("programs", []), (os.listdir(ib + "/drives/c"), di))
             check("and with one program, that is the one to run", di.get("launch", {}).get("program") == "C:\\NEWGAME.COM", di)
+            sx.ERRS[errs0:] = [e for e in sx.ERRS[errs0:] if not e.startswith("console: watched descriptor")]
         # EXIT at the DOS prompt ends the real core only when it is told to exit, which Close When Game Ends does.
         for ac in ("on", "off"):
-            t = desk('sleep 4\nretro key "${BP[$BID]["p"]}" space tap\nsleep 2\nfor k in e x i t enter; do retro key "${BP[$BID]["p"]}" $k tap; sleep 0.2; done', hb_, False,
-                     {"BP_CORE": dbp, "BX_AUTOCLOSE": ac})
-            t.collect(12.0)
+            t = desk("", hb_, False, {"BP_CORE": dbp, "BX_AUTOCLOSE": ac})
+            t.collect(5.0)
+            t.send(b" ")
+            t.collect(2.0)
+            for ch in (b"e", b"x", b"i", b"t", b"\r"):
+                t.send(ch)
+                t.collect(0.3)
+            t.collect(8.0)
             tx = t.screen().text()
             check("EXIT at the DOS prompt %s with Close When Game Ends %s" % ("closes the window" if ac == "on" else "leaves the window", ac),
                   ("\u2524 Hello \u251c" not in tx) == (ac == "on"), tx[:300])
@@ -610,8 +620,8 @@ q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/p
 out = q.stdout
 check("the pane lists the shelf folder, rendering, shape, full screen key, key hold, mouse and sound",
       all(w in out for w in ("Folder", "Rendering", "Shape", "Full Screen Key", "Release Mouse Key", "Key Held", "Mouse", "Mouse Capture", "Confirm On Exit", "Close When Game Ends", "Sound")), out + q.stderr)
-check("a row steps through its choices: mouse direct goes to relative, sound toggles",
-      "mouse=relative" in out and "sound=off" in out, out + q.stderr)
+check("a row steps through its choices: the mouse, relative by default, goes to off; sound toggles",
+      "mouse=off" in out and "sound=off" in out, out + q.stderr)
 check("the pane has Fetch Box Art, off until it is turned on", "Fetch Box Art|off" in out, out + q.stderr)
 
 # The folder dialog in a real desktop: the field is typed into and Save makes the folder and keeps it.
@@ -659,6 +669,23 @@ got = voo('{"boxer":1,"voodoo":"12mb","voodoospeed":"single"}')
 check("a Voodoo memory and speed are passed as the core's options", got == "[dosbox_pure_voodoo=12mb dosbox_pure_voodoo_perf=0]", got)
 got = voo('{"boxer":1,"voodoo":"off"}')
 check("Voodoo off is passed as off", got == "[dosbox_pure_voodoo=off]", got)
+
+# The mouse is relative unless chosen otherwise; a setting that still says direct from before the default changed is
+# moved once, and a direct chosen since then stays.
+def mousedef(**env):
+    e = {k: v for k, v in os.environ.items() if not k.startswith("BX_")}
+    e.update(env)
+    r = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxerplay.hibr\necho \"mouse=$BX_MOUSE v=$BX_MOUSEV\"\n" % (load("console"), DESK, ROOT)],
+                       capture_output=True, text=True, env=e, timeout=60)
+    return r.stdout.strip() + r.stderr
+got = mousedef()
+check("the mouse is relative by default", "mouse=relative v=2" in got, got)
+got = mousedef(BX_MOUSE="direct")
+check("a direct saved before the default changed was the old default and becomes relative, once", "mouse=relative v=2" in got, got)
+got = mousedef(BX_MOUSE="direct", BX_MOUSEV="2")
+check("a direct chosen since stays direct", "mouse=direct v=2" in got, got)
+got = mousedef(BX_MOUSE="off")
+check("and an off is never touched", "mouse=off v=2" in got, got)
 
 # The pane's MIDI Output dropdown lists the same synths, with the player loaded as it is in the desktop.
 q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\n"

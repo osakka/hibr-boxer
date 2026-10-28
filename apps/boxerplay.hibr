@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.18
+app boxerplay "A DOS game from a gamebox" 0.19
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -46,11 +46,17 @@ BX_ASPECT="${BX_ASPECT-4:3}"
 BX_FULLKEY="${BX_FULLKEY-f11}"
 BX_HOLD="${BX_HOLD-120}"
 BX_SOUND="${BX_SOUND-on}"
-BX_MOUSE="${BX_MOUSE-direct}"
+BX_MOUSE="${BX_MOUSE-relative}"
+# The mouse was direct until BX_MOUSEV 2; a setting still saying direct was the old default, not a choice.
+BX_MOUSEV="${BX_MOUSEV-}"
+if [ "$BX_MOUSEV" != 2 ]; then
+	[ "$BX_MOUSE" = direct ] && BX_MOUSE=relative
+	BX_MOUSEV=2
+fi
 BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
-command -v dt_keep > /dev/null && dt_keep BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_CARD BX_MIDIDIR BX_MIDI
+command -v dt_keep > /dev/null && dt_keep BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_MOUSEV BX_CARD BX_MIDIDIR BX_MIDI
 
 # --- what a folder holds, the way Boxer reckons it -----------------------------
 #
