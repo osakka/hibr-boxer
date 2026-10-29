@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.18
+app boxer "DOS games, one folder to a game" 1.19
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -25,7 +25,7 @@ command -v dt_app > /dev/null && dt_app boxer "Boxer" 21 72 "" "▣" fixed
 command -v dt_app > /dev/null && dt_app boxerabout "About Boxer" 24 78 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxercover "Fetch Cover" 10 66 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxerdone "Game Is Already Installed" 10 66 "" "" fixed hidden
-command -v dt_app > /dev/null && dt_app boxerinfo "Game Settings" 20 60 "" "" fixed hidden
+command -v dt_app > /dev/null && dt_app boxerinfo "Game Settings" 21 60 "" "" fixed hidden
 command -v dt_keepstate > /dev/null && dt_keepstate boxer BX
 command -v dt_opener > /dev/null && dt_opener boxerplay "Boxer" "boxer" app boxerplay dir
 command -v dt_openerverb > /dev/null && dt_openerverb boxer "Get Info..." boxerinfo
@@ -484,8 +484,8 @@ fn bx_fix(box) {
 # What is chosen is written into the game's boxer.json, so it goes with the box wherever the box goes, and wins
 # over what Control Panel > Boxer says for every game ("default" means that).
 
-BXI_FIELDS=(prog render aspect cycles machine voodoo vspeed sound irq dma port midi mouse capture)
-BXI_LABELS=("Program" "Rendering" "Shape" "Speed" "Graphics" "3D (Voodoo)" "3D Speed" "Sound Card" "Sound IRQ" "Sound DMA" "Sound Port" "MIDI" "Mouse" "Capture")
+BXI_FIELDS=(prog render aspect cycles machine voodoo vspeed sound irq dma port midi mouse capture limit)
+BXI_LABELS=("Program" "Rendering" "Shape" "Speed" "Graphics" "3D (Voodoo)" "3D Speed" "Sound Card" "Sound IRQ" "Sound DMA" "Sound Port" "MIDI" "Mouse" "Capture" "Speed Limit")
 BXI_IRQ=(default 3 5 7 9 10 11 12)
 BXI_DMA=(default 0 1 3 5 6 7)
 BXI_PORT=(default 210 220 230 240 250 260 280)
@@ -498,6 +498,7 @@ BXI_VSPEED=(default multi multi-low single single-low)
 BXI_SOUND=(default sb16 sbpro2 sb1 none)
 BXI_MOUSE=(default direct relative off)
 BXI_CAPTURE=(default seamless click)
+BXI_LIMIT=(default unlimited pentium2 pentium 486dx2 486dx 386)
 
 # Where in the box's document a field lives.
 fn bxi_path(field) {
@@ -516,6 +517,7 @@ fn bxi_path(field) {
 	midi) ret .midi ;;
 	mouse) ret .mouse ;;
 	capture) ret .capture ;;
+	limit) ret .cpu.limit ;;
 	esac
 }
 
@@ -582,6 +584,7 @@ fn bxi_choices(int id, field) {
 	midi) l="default disabled"; if dt_has bp_midilist; then while IFS= read -r f; do [ -n "$f" ] && l="$l $f"; done <<< "$(bp_midilist)"; fi; ret "$l" ;;
 	mouse) ret "${BXI_MOUSE[*]}" ;;
 	capture) ret "${BXI_CAPTURE[*]}" ;;
+	limit) ret "${BXI_LIMIT[*]}" ;;
 	esac
 }
 

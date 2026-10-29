@@ -9,7 +9,7 @@
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.8
+app boxerset "The Control Panel pane for Boxer" 0.9
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
 	dt_app bxfield "Games Folder" 9 64 "" "" fixed hidden
@@ -32,6 +32,7 @@ BX_PIC="${BX_PIC-follow}"
 BX_ASPECT="${BX_ASPECT-4:3}"
 BX_FULLKEY="${BX_FULLKEY-alt-enter}"
 BX_HOLD="${BX_HOLD-120}"
+BX_LIMIT="${BX_LIMIT-pentium}"
 BX_SOUND="${BX_SOUND-on}"
 BX_MOUSE="${BX_MOUSE-relative}"
 # The mouse was direct until BX_MOUSEV 2; a setting still saying direct was the old default, not a choice.
@@ -48,7 +49,7 @@ BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
 BX_ART="${BX_ART-off}"
-command -v dt_keep > /dev/null && dt_keep BX_ART BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_MOUSEV BX_CAPTURE BX_RELKEY BX_CONFIRM BX_AUTOCLOSE BX_CARD BX_MIDIDIR BX_MIDI
+command -v dt_keep > /dev/null && dt_keep BX_ART BX_SHELF BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_MOUSEV BX_CAPTURE BX_RELKEY BX_CONFIRM BX_AUTOCLOSE BX_LIMIT BX_CARD BX_MIDIDIR BX_MIDI
 
 # follow is Control Panel > Pictures, as the wallpaper's and YouTube's are.
 BXS_PICS=(follow pixels half)
@@ -57,6 +58,7 @@ BXS_KEYS=(alt-enter f11 f12 ctrl-f none)
 BXS_HOLDS=(60 120 200 300 500)
 BXS_MICE=(direct relative off)
 BXS_CAPS=(click seamless)
+BXS_LIMITS=(unlimited pentium2 pentium 486dx2 486dx 386)
 BXS_RELKEYS=(f12 ctrl-f10 f11 f10)
 BXS_CARDS=(sb16 sbpro2 sb1 none)
 declare -gA BXF
@@ -68,6 +70,7 @@ fn cp_set_bxhold(int? id = "", value = "") { BX_HOLD=$value; cp_save; }
 fn cp_set_bxmouse(int? id = "", value = "") { BX_MOUSE=$value; cp_save; }
 fn cp_set_bxrel(int? id = "", value = "") { BX_RELKEY=$value; cp_save; }
 fn cp_set_bxcap(int? id = "", value = "") { BX_CAPTURE=$value; cp_save; }
+fn cp_set_bxlimit(int? id = "", value = "") { BX_LIMIT=$value; cp_save; }
 fn cp_set_bxcard(int? id = "", value = "") { BX_CARD=$value; cp_save; }
 fn cp_set_bxmidi(int? id = "", value = "") { BX_MIDI=$value; cp_save; }
 
@@ -119,6 +122,10 @@ fn boxerset_rows(int w) {
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Mouse Capture"
 	CP[$w][$n]["val"]="$BX_CAPTURE"; CP[$w][$n]["key"]=capture
 	n=$((n + 1))
+	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Speed"; n=$((n + 1))
+	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Speed Limit"
+	CP[$w][$n]["val"]="$BX_LIMIT"; CP[$w][$n]["key"]=limit
+	n=$((n + 1))
 	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Quitting"; n=$((n + 1))
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Confirm On Exit"
 	CP[$w][$n]["wtype"]=bool
@@ -159,6 +166,7 @@ fn boxerset_do(int? w = "", k = "", int? dir = "") {
 	hold) v := cp_next "$BX_HOLD" "$dir" "${BXS_HOLDS[@]}"; BX_HOLD=$v ;;
 	mouse) v := cp_next "$BX_MOUSE" "$dir" "${BXS_MICE[@]}"; BX_MOUSE=$v ;;
 	capture) v := cp_next "$BX_CAPTURE" "$dir" "${BXS_CAPS[@]}"; BX_CAPTURE=$v ;;
+	limit) v := cp_next "$BX_LIMIT" "$dir" "${BXS_LIMITS[@]}"; BX_LIMIT=$v ;;
 	confirm) [ "$BX_CONFIRM" = on ] && BX_CONFIRM=off || BX_CONFIRM=on ;;
 	autoclose) [ "$BX_AUTOCLOSE" = on ] && BX_AUTOCLOSE=off || BX_AUTOCLOSE=on ;;
 	art) [ "$BX_ART" = on ] && BX_ART=off || BX_ART=on ;;
@@ -182,6 +190,7 @@ fn boxerset_drop(int? w = "", int? r = "", int? c = "", k = "") {
 	hold) dt_droplist "$w" "$r" "$c" cp_set_bxhold "${BXS_HOLDS[@]}" ;;
 	mouse) dt_droplist "$w" "$r" "$c" cp_set_bxmouse "${BXS_MICE[@]}" ;;
 	capture) dt_droplist "$w" "$r" "$c" cp_set_bxcap "${BXS_CAPS[@]}" ;;
+	limit) dt_droplist "$w" "$r" "$c" cp_set_bxlimit "${BXS_LIMITS[@]}" ;;
 	card) dt_droplist "$w" "$r" "$c" cp_set_bxcard "${BXS_CARDS[@]}" ;;
 	midi) m := bxs_midis; read -ra ml <<< "$m"; dt_droplist "$w" "$r" "$c" cp_set_bxmidi "${ml[@]}" ;;
 	esac

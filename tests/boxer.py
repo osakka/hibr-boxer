@@ -319,7 +319,7 @@ t.collect(1.2)
 sc = t.screen()
 check("Get Info opens the game's settings: name, program, speed, graphics, sound card, IRQ, DMA, port, MIDI, mouse",
       all(w in sc.text() for w in ("Beta Racer Settings", "Name", "Program", "Speed", "Graphics", "Sound Card", "Sound IRQ",
-                                   "Sound DMA", "Sound Port", "MIDI", "Mouse", "3D (Voodoo)", "3D Speed")), sc)
+                                   "Sound DMA", "Sound Port", "MIDI", "Mouse", "3D (Voodoo)", "3D Speed", "Speed Limit")), sc)
 t.send(b"\x1b[B" * 8 + b"\x1b[C")
 t.collect(0.8)
 doc = open(os.path.join(shelf, "Beta Racer.boxer", "boxer.json")).read()
@@ -658,14 +658,14 @@ out, err = withhome("echo \"shelf=$BX_SHELF\"")
 check("the default shelf is Dos Games in the home folder once it is there", "shelf=%s/Dos Games" % home in out, out + err)
 q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\n"
                     "declare -gA CP; boxerset_rows 40 > /dev/null\n"
-                    "for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do echo \"$i=${CP[40][$i][text]}|${CP[40][$i][val]}\"; done\n"
+                    "for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26; do echo \"$i=${CP[40][$i][text]}|${CP[40][$i][val]}\"; done\n"
                     "BX_SHELF=x; boxerset_do 40 mouse 1; echo \"mouse=$BX_MOUSE\"; boxerset_do 40 sound 1; echo \"sound=$BX_SOUND\""
                     % (load("console"), DESK, ROOT, HIBR_TREE + "/programs/desktop", ROOT)],
                    capture_output=True, text=True, env=dict(os.environ, HOME=home, XDG_RUNTIME_DIR=D, BX_SHELF=home + "/Dos Games"),
                    timeout=60)
 out = q.stdout
 check("the pane lists the shelf folder, rendering, shape, full screen key, key hold, mouse and sound",
-      all(w in out for w in ("Folder", "Rendering", "Shape", "Full Screen Key", "Release Mouse Key", "Key Held", "Mouse", "Mouse Capture", "Confirm On Exit", "Close When Game Ends", "Sound")), out + q.stderr)
+      all(w in out for w in ("Folder", "Rendering", "Shape", "Full Screen Key", "Release Mouse Key", "Key Held", "Mouse", "Mouse Capture", "Speed Limit", "Confirm On Exit", "Close When Game Ends", "Sound")), out + q.stderr)
 check("a row steps through its choices: the mouse, relative by default, goes to off; sound toggles",
       "mouse=off" in out and "sound=off" in out, out + q.stderr)
 check("the pane has Fetch Box Art, off until it is turned on", "Fetch Box Art|off" in out, out + q.stderr)
@@ -732,6 +732,17 @@ got = mousedef(BX_MOUSE="direct", BX_MOUSEV="2")
 check("a direct chosen since stays direct", "mouse=direct v=2" in got, got)
 got = mousedef(BX_MOUSE="off")
 check("and an off is never touched", "mouse=off v=2" in got, got)
+
+# The speed limit: how fast the emulated machine may go, since DOS games never sleep and a core would be spent on their
+# waiting loops. The names stand for the core's own cycles.
+def lim(*names):
+    r = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxerplay.hibr\nfor n in %s; do v := bp_limit \"$n\"; echo \"$n=$v\"; done\n"
+                        % (load("console"), DESK, ROOT, " ".join(names))],
+                       capture_output=True, text=True, env=dict(os.environ, **ENVBASE), timeout=60)
+    return r.stdout.split() + ([r.stderr] if r.stderr.strip() else [])
+got = lim("unlimited", "pentium2", "pentium", "486dx2", "486dx", "386", "bogus")
+check("a speed limit name is the core's cycles for that machine, and an unknown one is the default (Pentium)",
+      got == ["unlimited=none", "pentium2=200000", "pentium=77000", "486dx2=26800", "486dx=13400", "386=4720", "bogus=77000"], got)
 
 # The pane's MIDI Output dropdown lists the same synths, with the player loaded as it is in the desktop.
 q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\n"

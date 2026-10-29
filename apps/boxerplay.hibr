@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.24
+app boxerplay "A DOS game from a gamebox" 0.25
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -45,6 +45,7 @@ BX_PIC="${BX_PIC-follow}"
 BX_ASPECT="${BX_ASPECT-4:3}"
 BX_FULLKEY="${BX_FULLKEY-alt-enter}"
 BX_HOLD="${BX_HOLD-120}"
+BX_LIMIT="${BX_LIMIT-pentium}"
 BX_SOUND="${BX_SOUND-on}"
 BX_MOUSE="${BX_MOUSE-relative}"
 # The mouse was direct until BX_MOUSEV 2; a setting still saying direct was the old default, not a choice.
@@ -56,7 +57,7 @@ fi
 BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
-command -v dt_keep > /dev/null && dt_keep BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_SOUND BX_MOUSE BX_MOUSEV BX_CARD BX_MIDIDIR BX_MIDI
+command -v dt_keep > /dev/null && dt_keep BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_LIMIT BX_SOUND BX_MOUSE BX_MOUSEV BX_CARD BX_MIDIDIR BX_MIDI
 
 # --- what a folder holds, the way Boxer reckons it -----------------------------
 #
@@ -283,7 +284,7 @@ fn bd_describe(box, name, state = "") {
 
 	bm_up "$box"
 	if [ -r "$box/boxer.json" ] && json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null; then
-		for p in .title .display.render .display.aspect .cpu.cycles .machine .voodoo .voodoospeed .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .capture .launch.args .source.imported; do
+		for p in .title .display.render .display.aspect .cpu.cycles .cpu.limit .machine .voodoo .voodoospeed .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .capture .launch.args .source.imported; do
 			old := json get BPJ "$p" 2> /dev/null || old=
 			[ -n "$old" ] && keep[$p]=$old
 		done
@@ -428,6 +429,19 @@ fn bp_get(doc, path, def = "") {
 # direct puts DOS's pointer where the terminal's is, which is what a
 # point-and-click game wants; relative moves it by the distance between
 # presses, for a game that wants that and will do little; off hands DOS none.
+# The emulated speed a limit name stands for, in the core's cycles per millisecond ("none" for no limit).
+fn bp_limit(name) {
+	case $name in
+	unlimited) ret none ;;
+	pentium2) ret 200000 ;;
+	pentium) ret 77000 ;;
+	486dx2) ret 26800 ;;
+	486dx) ret 13400 ;;
+	386) ret 4720 ;;
+	*) ret 77000 ;;
+	esac
+}
+
 fn bp_mousemode(m) {
 	case $m in
 	relative) ret virtual ;;
@@ -567,7 +581,7 @@ fn bp_conf(box, dir) {
 
 # Start the game: its run.conf made, and the core given it.
 fn bp_start(int id) {
-	local box=${BP[$id]["box"]} dir conf mm midi vo kv
+	local box=${BP[$id]["box"]} dir conf mm midi vo kv lim
 	local -A snd
 	local -a vw vopt
 
@@ -600,6 +614,12 @@ fn bp_start(int id) {
 	read -ra vw <<< "$vo"
 	vopt=()
 	for kv in "${vw[@]}"; do vopt+=(-o "$kv"); done
+	# How fast the emulated machine may go: real DOS games never sleep, so with no limit a core is spent running
+	# their waiting loops. A game's own (Get Info) wins over Control Panel > Boxer > Speed Limit.
+	lim := bp_get BPJ .cpu.limit default
+	[ "$lim" = default ] && lim=$BX_LIMIT
+	lim := bp_limit "$lim"
+	vopt+=(-o "dosbox_pure_cycles_max=$lim")
 	# DOSBox Pure keeps a finished session on a red screen unless told to exit.
 	[ "${BX_AUTOCLOSE-on}" = on ] && vopt+=(-o dosbox_pure_menu_time=0)
 	BP[$id]["p"] := retro open "$BP_CORE" "$conf" -s "$BP_SYS" -S "$box/saves" \
