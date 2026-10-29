@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.23
+app boxerplay "A DOS game from a gamebox" 0.24
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -847,7 +847,23 @@ fn bp_full(int id) {
 	if [ "${BX_TRUEFULL-on}" != off ] && dt_has dt_fullscreen && dt_fullscreen "$id" toggle; then
 		return 0
 	fi
+	if [ "${BX_TRUEFULL-on}" = off ]; then
+		bp_why "$id" "true full screen is off (BX_TRUEFULL=off)"
+	elif ! dt_has dt_fullscreen; then
+		bp_why "$id" "this hibr has no true full screen; it needs 0.99.380 or newer, so the window is made as large as it can be instead"
+	else
+		bp_why "$id" "the desktop would not take full screen for this window"
+	fi
 	dt_zoom "$id"
+	return 0
+}
+
+# Why a thing was not done the better way: the desktop's log and, once per window, a note.
+fn bp_why(int id, text) {
+	dt_has dt_log && dt_log "boxer: ${BP[$id]["name"]-game} (window $id): full screen: $text"
+	[ -n "${BP[$id]["whyfs"]-}" ] && return 0
+	BP[$id]["whyfs"]=1
+	dt_notep low "Full screen: $text"
 	return 0
 }
 

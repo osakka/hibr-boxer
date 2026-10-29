@@ -263,7 +263,7 @@ t.collect(2.0)
 w0 = t.screen().text()
 t.send(b"\x1b[23~")
 t.collect(1.0)
-check("and zooms the window as before when true full screen is off (BX_TRUEFULL=off)", t.screen().text() != w0 and not os.path.exists(D + "/fs2.log"), t.screen())
+check("and zooms the window as before when true full screen is off (BX_TRUEFULL=off), and says why", t.screen().text() != w0 and not os.path.exists(D + "/fs2.log") and "true full screen is off" in t.raw.decode("utf-8", "replace"), t.screen())
 t.close()
 
 # True full screen on a hibr that has it (0.99.380): Alt+Enter takes the whole display, the picture stays, the desktop's
