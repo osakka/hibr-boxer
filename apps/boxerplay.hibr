@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.29
+app boxerplay "A DOS game from a gamebox" 0.30
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -978,6 +978,8 @@ fn bp_capture(int id, int on) {
 		if [ "${BP[$id]["rel"]-0}" != 1 ] && [ -z "${BP[$id]["hinted"]-}" ]; then
 			BP[$id]["hinted"]=1
 			dt_notep low "Mouse captured, $key lets go. Doom-like? Game > Relative Mouse"
+		elif [ "${BP[$id]["rel"]-0}" = 1 ] && [ -n "${BP[$id]["whylock"]-}" ]; then
+			dt_notep high "Mouse captured but NOT held: ${BP[$id]["whylock"]}. It can leave the window; $key lets go"
 		else
 			dt_notep low "Mouse captured. $key lets it go"
 		fi
@@ -997,6 +999,7 @@ fn bp_lockwhy(int id, text) {
 fn bp_lock(int id, int on) {
 	local st
 
+	BP[$id]["whylock"]=
 	if [ "$on" = 0 ]; then
 		[ "${BP[$id]["lock"]-0}" = 1 ] || return 1
 		BP[$id]["lock"]=0
@@ -1009,19 +1012,23 @@ fn bp_lock(int id, int on) {
 	fi
 	if [ -n "${BP[$id]["nolock"]-}" ]; then
 		bp_lockwhy "$id" "not asked: refused earlier in this window"
+		BP[$id]["whylock"]="the display refused it"
 		return 1
 	fi
 	if ! dt_has dt_ptrlockcan || ! dt_has dt_pointerlock; then
 		bp_lockwhy "$id" "not asked: this hibr has no pointer lock"
+		BP[$id]["whylock"]="this hibr has no pointer lock"
 		return 1
 	fi
 	if ! dt_ptrlockcan; then
 		bp_lockwhy "$id" "not asked: dt_ptrlockcan says no display can hold the pointer"
+		BP[$id]["whylock"]="no screen can hold it: Restart Desktop, or Blit is older than 0.2.42"
 		return 1
 	fi
 	dt_pointerlock "$id" on && st=0 || st=$?
 	if [ "$st" != 0 ]; then
 		bp_lockwhy "$id" "not taken: dt_pointerlock on returned $st (the window has no focus, or no display can)"
+		BP[$id]["whylock"]="the window had no focus"
 		return 1
 	fi
 	bp_lockwhy "$id" "asked"

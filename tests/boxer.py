@@ -33,6 +33,12 @@ def gamebox(name="Test Game"):
     return b
 
 
+def notetext(t):
+    """What is on the screen with the note's box lines and the wrapping taken out, so a message that wraps reads as one."""
+    import re
+    return " ".join(re.sub("[\u2500-\u257f]", " ", t.screen().text()).split())
+
+
 def desk(body, box, pix=False, env=None, caps=None, pre=""):
     p = sx.scratch("boxer.hibr")
     open(p, "w").write(
@@ -253,8 +259,8 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     t.collect(2.5)
     t.send(sx.press(14, 45) + sx.release(14, 45))
     t.collect(1.0)
-    check("on a terminal that cannot hold the pointer none is asked for, and the click still captures",
-          b"\x1b[?7701h" not in t.raw and "Mouse captured. f12" in t.raw.decode("utf-8", "replace"), t.raw[-200:])
+    check("on a terminal that cannot hold the pointer none is asked for, the click still captures, and the note says it is not held and why",
+          b"\x1b[?7701h" not in t.raw and "NOT held" in notetext(t) and "no screen can hold" in notetext(t), notetext(t))
     t.close()
 
 
