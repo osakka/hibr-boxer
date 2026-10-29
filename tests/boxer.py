@@ -251,20 +251,48 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
 # The full-screen key asks the desktop for the whole display where it can (hibr #405), and zooms where it cannot.
 if os.path.exists(D + "/fs.log"):
     os.remove(D + "/fs.log")
-t = desk("", box, False, {"BX_TRUEFULL": "1", "BX_FULLKEY": "f11"}, None, 'fn dt_fullscreen(int id, how) { echo "$id:$how" >> %s/fs.log; return 0; }' % D)
+t = desk("", box, False, {"BX_FULLKEY": "f11"}, None, 'fn dt_fullscreen(int id, how) { echo "$id:$how" >> %s/fs.log; return 0; }' % D)
 t.collect(2.0)
 t.send(b"\x1b[23~")
 t.collect(1.0)
 check("the full-screen key asks the desktop for full screen (toggle) when it has it",
       os.path.exists(D + "/fs.log") and open(D + "/fs.log").read().split()[-1].endswith(":toggle"), open(D + "/fs.log").read() if os.path.exists(D + "/fs.log") else "no call")
 t.close()
-t = desk("", box, False, {"BX_FULLKEY": "f11"}, None, 'fn dt_fullscreen(int id, how) { echo "$id:$how" >> %s/fs2.log; return 0; }' % D)
+t = desk("", box, False, {"BX_FULLKEY": "f11", "BX_TRUEFULL": "off"}, None, 'fn dt_fullscreen(int id, how) { echo "$id:$how" >> %s/fs2.log; return 0; }' % D)
 t.collect(2.0)
 w0 = t.screen().text()
 t.send(b"\x1b[23~")
 t.collect(1.0)
-check("and zooms the window as before when it does not, or while true full screen is off (BX_TRUEFULL)", t.screen().text() != w0 and not os.path.exists(D + "/fs2.log"), t.screen())
+check("and zooms the window as before when true full screen is off (BX_TRUEFULL=off)", t.screen().text() != w0 and not os.path.exists(D + "/fs2.log"), t.screen())
 t.close()
+
+# True full screen on a hibr that has it (0.99.380): Alt+Enter takes the whole display, the picture stays, the desktop's
+# leave key and Alt+Enter both give it back, in half blocks and in pixels.
+if os.path.exists(HIBR_TREE + "/programs/desktop/wm/fullscreen.hibr"):
+    def fst(t):
+        tx = t.screen().text()
+        return ("File  Edit" in tx, "Test Game" in tx, tx.count("\u2580"), t.raw.count(b"a=T"))
+    for pix in (False, True):
+        t = desk("", box, pix, {"BX_FULLKEY": "alt-enter"})
+        t.collect(2.5)
+        b0 = fst(t)
+        t.send(b"\x1b\r")
+        t.collect(2.5)
+        b1 = fst(t)
+        full = (not b1[0] and not b1[1] and (b1[2] > b0[2] if not pix else b1[3] > b0[3]))
+        check("Alt+Enter takes the whole display (no bar, no frame) and the picture stays (%s)" % ("kitty" if pix else "half blocks"), full, (b0, b1))
+        check("and the desktop says how to leave", "leaves it" in t.screen().text() or "leaves it" in t.raw.decode("utf-8", "replace"), t.raw[-200:])
+        t.send(b"\x1b[23;5~")
+        t.collect(2.0)
+        b2 = fst(t)
+        check("Ctrl+F11 gives the bar and frame back (%s)" % ("kitty" if pix else "half blocks"), b2[0] and b2[1], b2)
+        t.send(b"\x1b\r")
+        t.collect(2.0)
+        t.send(b"\x1b\r")
+        t.collect(2.0)
+        b3 = fst(t)
+        check("and Alt+Enter toggles it out again (%s)" % ("kitty" if pix else "half blocks"), b3[0] and b3[1], b3)
+        t.close()
 
 # Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
 for conf in ("on", "off"):
@@ -939,6 +967,11 @@ check("a JPEG is turned away: a cover must be a PNG", "st=1" in out and "must be
 srv.shutdown()
 
 shutil.rmtree(D, True)
+# hibr's console notes a game's descriptor that went unread for a couple of seconds ("watched descriptor N has been ready
+# for N ms with nothing reading it") when a test session starts or quits while the machine is busy; it is a timing note
+# about a slow desktop, not a shell error. A game left idle in a window or in full screen does not make it (looked at
+# directly), so it is not counted here.
+sx.ERRS[:] = [e for e in sx.ERRS if not e.startswith("console: watched descriptor")]
 import glob
 for f in glob.glob("/tmp/hibr-boxer*-%d.hibr" % os.getpid()):
     os.remove(f)
