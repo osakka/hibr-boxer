@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.28
+app boxerplay "A DOS game from a gamebox" 0.29
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -836,7 +836,11 @@ fn bp_ended(int id) {
 
 	[ -n "$p" ] && [ "${BX_AUTOCLOSE-on}" = on ] || return 0
 	st := retro info "$p" 2> /dev/null || return 0
-	[ "${st[ended]-0}" = 1 ] && dt_del "$id"
+	# From inside a frame a window asks to be closed (dt_wantclose, hibr 0.99.38x): the desktop closes it once the frame is drawn.
+	# A delete here would pull the window out while the pass still holds it.
+	if [ "${st[ended]-0}" = 1 ]; then
+		if dt_has dt_wantclose; then dt_wantclose "$id"; else dt_del "$id"; fi
+	fi
 	return 0
 }
 
