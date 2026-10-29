@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.20
+app boxerplay "A DOS game from a gamebox" 0.22
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -43,7 +43,7 @@ BP_SYS="${BP_SYS-${XDG_DATA_HOME:-$HOME/.local/share}/hibr/retro/system}"
 # back, and is the game's rather than the desktop's.
 BX_PIC="${BX_PIC-follow}"
 BX_ASPECT="${BX_ASPECT-4:3}"
-BX_FULLKEY="${BX_FULLKEY-f11}"
+BX_FULLKEY="${BX_FULLKEY-alt-enter}"
 BX_HOLD="${BX_HOLD-120}"
 BX_SOUND="${BX_SOUND-on}"
 BX_MOUSE="${BX_MOUSE-relative}"
@@ -778,7 +778,8 @@ fn boxerplay_draw(int id, int h, int w, int row, int col) {
 	*) m=half ;;
 	esac
 	retro size "$p" "$w" "$h" "$m"
-	retro draw "$p" 1 1 -p "w$id" 2> /dev/null
+	# The window's own cells start one in from its frame; with none, in full screen, at the corner.
+	if [ "${DT_FULL-}" = "$id" ]; then retro draw "$p" 0 0 -p "w$id" 2> /dev/null; else retro draw "$p" 1 1 -p "w$id" 2> /dev/null; fi
 	BP[$id]["h"]=$h
 	BP[$id]["w"]=$w
 	BP[$id]["at"] := dt_ms
@@ -840,9 +841,11 @@ bp_quityes() {
 }
 
 # The full-screen key: the whole display with no bar or frame where hibr can (dt_fullscreen,
-# hibr #405), else the window made as large as the desktop allows (dt_zoom), as before.
+# hibr #405) and BX_TRUEFULL says so, else the window made as large as the desktop allows
+# (dt_zoom), as before. hibr 0.99.379's full screen showed none of what a module draws, so it
+# is off until that is settled.
 fn bp_full(int id) {
-	if dt_has dt_fullscreen && dt_fullscreen "$id" toggle; then
+	if [ -n "${BX_TRUEFULL-}" ] && dt_has dt_fullscreen && dt_fullscreen "$id" toggle; then
 		return 0
 	fi
 	dt_zoom "$id"

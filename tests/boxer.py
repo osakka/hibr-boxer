@@ -251,19 +251,19 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
 # The full-screen key asks the desktop for the whole display where it can (hibr #405), and zooms where it cannot.
 if os.path.exists(D + "/fs.log"):
     os.remove(D + "/fs.log")
-t = desk("", box, False, {}, None, 'fn dt_fullscreen(int id, how) { echo "$id:$how" >> %s/fs.log; return 0; }' % D)
+t = desk("", box, False, {"BX_TRUEFULL": "1", "BX_FULLKEY": "f11"}, None, 'fn dt_fullscreen(int id, how) { echo "$id:$how" >> %s/fs.log; return 0; }' % D)
 t.collect(2.0)
 t.send(b"\x1b[23~")
 t.collect(1.0)
 check("the full-screen key asks the desktop for full screen (toggle) when it has it",
       os.path.exists(D + "/fs.log") and open(D + "/fs.log").read().split()[-1].endswith(":toggle"), open(D + "/fs.log").read() if os.path.exists(D + "/fs.log") else "no call")
 t.close()
-t = desk("", box, False, {}, None, "")
+t = desk("", box, False, {"BX_FULLKEY": "f11"}, None, 'fn dt_fullscreen(int id, how) { echo "$id:$how" >> %s/fs2.log; return 0; }' % D)
 t.collect(2.0)
 w0 = t.screen().text()
 t.send(b"\x1b[23~")
 t.collect(1.0)
-check("and zooms the window as before when it does not", t.screen().text() != w0, t.screen())
+check("and zooms the window as before when it does not, or while true full screen is off (BX_TRUEFULL)", t.screen().text() != w0 and not os.path.exists(D + "/fs2.log"), t.screen())
 t.close()
 
 # Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
