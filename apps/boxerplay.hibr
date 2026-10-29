@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.25
+app boxerplay "A DOS game from a gamebox" 0.26
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -284,7 +284,7 @@ fn bd_describe(box, name, state = "") {
 
 	bm_up "$box"
 	if [ -r "$box/boxer.json" ] && json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null; then
-		for p in .title .display.render .display.aspect .cpu.cycles .cpu.limit .machine .voodoo .voodoospeed .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .capture .launch.args .source.imported; do
+		for p in .title .display.render .display.aspect .cpu.cycles .cpu.limit .cpu.type .machine .voodoo .voodoospeed .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .capture .launch.args .source.imported; do
 			old := json get BPJ "$p" 2> /dev/null || old=
 			[ -n "$old" ] && keep[$p]=$old
 		done
@@ -581,7 +581,7 @@ fn bp_conf(box, dir) {
 
 # Start the game: its run.conf made, and the core given it.
 fn bp_start(int id) {
-	local box=${BP[$id]["box"]} dir conf mm midi vo kv lim
+	local box=${BP[$id]["box"]} dir conf mm midi vo kv lim ct
 	local -A snd
 	local -a vw vopt
 
@@ -620,6 +620,9 @@ fn bp_start(int id) {
 	[ "$lim" = default ] && lim=$BX_LIMIT
 	lim := bp_limit "$lim"
 	vopt+=(-o "dosbox_pure_cycles_max=$lim")
+	# Which CPU is emulated, for the rare game that wants a particular one; left to the core's own (auto) otherwise.
+	ct := bp_get BPJ .cpu.type default
+	[ "$ct" != default ] && vopt+=(-o "dosbox_pure_cpu_type=$ct")
 	# DOSBox Pure keeps a finished session on a red screen unless told to exit.
 	[ "${BX_AUTOCLOSE-on}" = on ] && vopt+=(-o dosbox_pure_menu_time=0)
 	BP[$id]["p"] := retro open "$BP_CORE" "$conf" -s "$BP_SYS" -S "$box/saves" \

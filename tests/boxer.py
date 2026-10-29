@@ -319,11 +319,19 @@ t.collect(1.2)
 sc = t.screen()
 check("Get Info opens the game's settings: name, program, speed, graphics, sound card, IRQ, DMA, port, MIDI, mouse",
       all(w in sc.text() for w in ("Beta Racer Settings", "Name", "Program", "Speed", "Graphics", "Sound Card", "Sound IRQ",
-                                   "Sound DMA", "Sound Port", "MIDI", "Mouse", "3D (Voodoo)", "3D Speed", "Speed Limit")), sc)
+                                   "Sound DMA", "Sound Port", "MIDI", "Mouse", "3D (Voodoo)", "3D Speed", "Speed Limit", "CPU")), sc)
 t.send(b"\x1b[B" * 8 + b"\x1b[C")
 t.collect(0.8)
 doc = open(os.path.join(shelf, "Beta Racer.boxer", "boxer.json")).read()
 check("a field changed in that window (Sound IRQ) is written into the box", '"irq": "3"' in doc, doc)
+t.close()
+# The CPU is the last row: the second choice after default, written into the box.
+t = appdesk("boxerinfo", os.path.join(shelf, "Beta Racer.boxer"))
+t.collect(1.2)
+t.send(b"\x1b[B" * 15 + b"\x1b[C")
+t.collect(0.8)
+doc = open(os.path.join(shelf, "Beta Racer.boxer", "boxer.json")).read()
+check("the CPU row of Get Info writes the emulated CPU type into the box", '"type": "auto"' in doc, doc)
 t.close()
 
 # MIDI: the synths in the folder are listed as DOSBox Pure knows them, and linked into its system folder.
