@@ -26,7 +26,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.26
+app boxerplay "A DOS game from a gamebox" 0.28
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -893,6 +893,10 @@ fn bp_why(int id, text) {
 # The desktop tells a window when full screen starts or ends, ended by it or not.
 fn boxerplay_fullscreen(int id, on) {
 	BP[$id]["fs"]=0
+	# A captured mouse stays captured across the change: the pointer is hidden again, and an unlock that comes right
+	# after it (a terminal letting go as the screen was redrawn) is answered by asking for the lock again.
+	BP[$id]["fstime"] := dt_ms
+	if [ "${BP[$id]["cap"]-0}" = 1 ] && dt_has dt_pointer; then dt_pointer "$id" none; fi
 	if [ "$on" = on ]; then
 		BP[$id]["fs"]=1
 		dt_notep high "Full screen: ${BX_FULLKEY} or ${DT_KEYS["fsleave"]-ctrl-f11} leaves it"
@@ -1059,6 +1063,11 @@ fn bp_unlocked(int id) {
 		return 0
 	fi
 	bp_lockwhy "$id" "ended: the desktop gave the pointer back; released"
+	if [ "${BP[$id]["cap"]-0}" = 1 ] && [ -n "${BP[$id]["fstime"]-}" ] && [ $((now - ${BP[$id]["fstime"]})) -lt 1500 ]; then
+		BP[$id]["fstime"]=
+		bp_lockwhy "$id" "ended right after a full-screen change; asking for the lock again"
+		bp_lock "$id" 1 && return 0
+	fi
 	BP[$id]["cap"]=0
 	dt_has dt_pointer && dt_pointer "$id" ""
 	dt_notep low "Mouse released"
@@ -1071,6 +1080,12 @@ fn bp_unlocked(int id) {
 fn boxerplay_mouse(int id, act, btn, int r, int c, mods = "") {
 	local p=${BP[$id]["p"]} b=1 at ar ac
 
+	# Asking which program to run: a press on one picks it. The desktop sends a click to _mouse when an app
+	# has one, and never to _click, so this is where the chooser hears the mouse.
+	if [ -n "${BP[$id]["choose"]-}" ]; then
+		case ${act##*-} in press) bp_chooseclick "$id" "$r" "$c" ;; esac
+		return 0
+	fi
 	[ -n "$p" ] || return 0
 	if [ "$act" = unlock ]; then
 		bp_unlocked "$id"

@@ -194,15 +194,25 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     t.collect(1.0)
     check("a click after that takes the lock again, so the release really ended it", rd().count("pointer lock: asked") == 2, rd())
     t.close()
-    # A capture that has had no report when Release Pointer is pressed (the click's own release never came) is let go, not taken for a refusal.
-    t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)
+    # Going full screen with the mouse captured: the capture and the lock stay; and if the terminal lets go as the screen
+    # is redrawn (played here by the display's own release), the lock is asked for again and the capture is not dropped.
+    lj = json.load(open(lockbox + "/boxer.json"))
+    lj.update({"title": "Lock Game", "capture": "click", "mouse": "relative"})
+    json.dump(lj, open(lockbox + "/boxer.json", "w"))
+    if os.path.exists(D + "/lock.dtlog"):
+        os.remove(D + "/lock.dtlog")
+    t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on", "BX_FULLKEY": "alt-enter"}, ["lock"], pre)
     t.collect(2.5)
-    t.send(sx.press(14, 45))
-    t.collect(1.0)
-    t.send(b"\x1b[21;5~")
-    t.collect(0.8)
-    check("Release Pointer before the pointer has moved lets the capture go, as it should",
-          b"\x1b[?7701h" in t.raw and "Mouse released" in t.raw.decode("utf-8", "replace"), t.raw[-300:])
+    t.send(sx.press(14, 45) + sx.release(14, 45))
+    t.collect(1.5)
+    t.send(b"\x1b\r")
+    t.collect(0.5)
+    t.send(b"\x1b[?7701;2$y")
+    t.collect(1.5)
+    check("full screen with the mouse captured keeps the capture, and takes no bar or frame", "File  Edit" not in t.screen().text()
+          and "Mouse released" not in t.raw.decode("utf-8", "replace"), t.screen())
+    check("and a release right after the change (the display letting go, played here) is answered by asking again",
+          t.raw.count(b"\x1b[?7701h") == 2 and "asking for the lock again" in rd(), (t.raw.count(b"\x1b[?7701h"), rd()))
     t.close()
     # A capture that has had no report when Release Pointer is pressed (the click's own release never came) is let go, not taken for a refusal.
     t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)
@@ -779,6 +789,19 @@ t = appdesk("boxerplay", os.path.join(csh, os.path.basename(b2)))
 t.collect(1.5)
 check("playing a game with no program chosen offers its programs", "PRINCE.EXE" in t.screen().text() and "Which program" in t.screen().text(),
       t.screen())
+# The mouse picks a program too: a click on its row (the desktop sends it to _mouse, never to _click).
+cbox = os.path.join(csh, os.path.basename(b2))
+pos = t.screen().find("PRINCE.EXE")
+t.send(sx.press(pos[0], pos[1] + 2) + sx.release(pos[0], pos[1] + 2))
+t.collect(2.0)
+saved = doc(cbox).get("launch", {}).get("program", "")
+check("a click on a program in the list runs it and remembers it, as Enter does", saved.upper().endswith("PRINCE.EXE") and "Which program" not in t.screen().text(), (saved, t.screen()))
+t.close()
+d0 = doc(cbox)
+d0.get("launch", {}).pop("program", None)
+json.dump(d0, open(os.path.join(cbox, "boxer.json"), "w"))
+t = appdesk("boxerplay", cbox)
+t.collect(1.5)
 t.send(b"\r")
 t.collect(1.5)
 saved = doc(os.path.join(csh, os.path.basename(b2))).get("launch", {}).get("program", "")
