@@ -17,19 +17,19 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.24
-# modules: img retro
+app boxer "DOS games, one folder to a game" 1.25
+# modules: img retro fetch
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
 command -v dt_app > /dev/null && dt_app boxer "Boxer" 21 72 "" "▣" fixed
 command -v dt_app > /dev/null && dt_app boxerabout "About Boxer" 24 78 "" "" fixed hidden
-command -v dt_app > /dev/null && dt_app boxercover "Fetch Cover" 10 66 "" "" fixed hidden
+command -v dt_app > /dev/null && dt_app boxerpick "Find Cover" 26 80 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxerdone "Game Is Already Installed" 10 66 "" "" fixed hidden
 command -v dt_app > /dev/null && dt_app boxerinfo "Game Settings" 22 60 "" "" fixed hidden
 command -v dt_keepstate > /dev/null && dt_keepstate boxer BX
 command -v dt_opener > /dev/null && dt_opener boxerplay "Boxer" "boxer" app boxerplay dir
 command -v dt_openerverb > /dev/null && dt_openerverb boxer "Get Info..." boxerinfo
-command -v dt_openerverb > /dev/null && dt_openerverb boxer "Fetch Cover..." boxercover
+command -v dt_openerverb > /dev/null && dt_openerverb boxer "Find Cover..." boxerpick
 command -v dt_openerverb > /dev/null && dt_openerverb boxer "Game Is Already Installed..." boxerdone
 
 declare -gA BX BXJ
@@ -177,11 +177,14 @@ fn bc_cache() {
 	ret "${XDG_CACHE_HOME:-$HOME/.cache}/hibr/boxer"
 }
 
-# Where a set of covers is fetched from: boxarts (the default) or titles.
+# Where a set of covers is fetched from: boxarts (the default), titles or snaps.
 fn bc_url(set = boxarts) {
 	local u=${BX_ART_URL:-https://thumbnails.libretro.com/DOS/Named_Boxarts/}
 
-	[ "$set" = titles ] && u=${u/Named_Boxarts/Named_Titles}
+	case $set in
+	titles) u=${u/Named_Boxarts/Named_Titles} ;;
+	snaps) u=${u/Named_Boxarts/Named_Snaps} ;;
+	esac
 	ret "$u"
 }
 
@@ -218,28 +221,26 @@ fn bc_get(url, out, int max) {
 	local pr='=https'
 
 	[ -n "${BX_ART_URL-}" ] && pr='=http,https'
+	if need fetch 2> /dev/null; then
+		case $url in
+		https://*) ;;
+		http://*) [ -n "${BX_ART_URL-}" ] || return 1 ;;
+		*) return 1 ;;
+		esac
+		fetch "$url" -o "$out" -t 30 > /dev/null 2>&1 || { command rm -f -- "$out"; return 1; }
+		if [ "$(stat -c %s "$out" 2> /dev/null || echo 0)" -gt "$max" ]; then
+			command rm -f -- "$out"
+			return 1
+		fi
+		return 0
+	fi
 	command -v curl > /dev/null || return 1
 	curl -fsSL --proto "$pr" --proto-redir "$pr" --max-time 30 --max-filesize "$max" -o "$out" -- "$url" 2> /dev/null
 }
 
-# Which of the listed covers is the game's. Both names are made alike first:
-# lower case, without the (year) or [tags], the apostrophes, the leading or
-# trailing "the", "&" as "and", the punctuation, a number split from the letters
-# before it ("keen1") and a Roman numeral as a number. Then, best first: the
-# same name; the same but for spaces (Sim City, SimCity); for a game whose name
-# ends in a number ("Larry 2"), a name that starts with it, which is the one
-# with its subtitle, or has it inside ("Leisure Suit Larry 2: ..."); the name
-# with a format suffix (sci, vga, cd); and one slip of a letter in a long
-# name, never in a number or the last letter, which is the difference between
-# a game and its sequel or its plural. A few short names DOS folders have (PRINCE,
-# LSL2, KQ5, WOLF3D) are spelled out first. A demo is the last choice, a (year)
-# a little better. A series name alone is not guessed at, nor a sequel taken
-# for its first game: a wrong cover is worse than none. Gives the encoded file
-# name, or nothing.
-fn bc_match(title, lst) {
-	local r
-
-	r=$(awk -F '\t' -v title="$title" '
+# The awk both the strict matcher and the loose search are written in, as one text (no single quote in it, so it
+# can sit in one): how a name is made alike, the short names DOS folders have, and the strict rules.
+BC_AWKF='
 function squash(s) { gsub(/ /, "", s); return s }
 function words(s,   n, i, a, c, p, o, w) {
 	o = ""; p = ""
@@ -327,6 +328,26 @@ function score(q, qs, qn, numbered, n, ns,   tail) {
 	if (length(qs) >= 10 && qn == nwords(n) && substr(qs, 1, 3) == substr(ns, 1, 3) && lev1(qs, ns)) return 4
 	return -1
 }
+'
+
+# Which of the listed covers is the game's. Both names are made alike first:
+# lower case, without the (year) or [tags], the apostrophes, the leading or
+# trailing "the", "&" as "and", the punctuation, a number split from the letters
+# before it ("keen1") and a Roman numeral as a number. Then, best first: the
+# same name; the same but for spaces (Sim City, SimCity); for a game whose name
+# ends in a number ("Larry 2"), a name that starts with it, which is the one
+# with its subtitle, or has it inside ("Leisure Suit Larry 2: ..."); the name
+# with a format suffix (sci, vga, cd); and one slip of a letter in a long
+# name, never in a number or the last letter, which is the difference between
+# a game and its sequel or its plural. A few short names DOS folders have (PRINCE,
+# LSL2, KQ5, WOLF3D) are spelled out first. A demo is the last choice, a (year)
+# a little better. A series name alone is not guessed at, nor a sequel taken
+# for its first game: a wrong cover is worse than none. Gives the encoded file
+# name, or nothing.
+fn bc_match(title, lst) {
+	local r
+
+	r=$(awk -F '\t' -v title="$title" "$BC_AWKF"'
 BEGIN {
 	sq = sprintf("%c", 39)
 	q = alias(norm(title)); qs = squash(q); best = ""; bs = 1e9
@@ -377,6 +398,106 @@ fn bc_fetch(box, only = "") {
 		return 0
 	done
 	return $got
+}
+
+# A picture's size in pixels from its PNG header, "width height"; status 1 if it is not one.
+fn bc_dims(f) {
+	local w h
+
+	[ "$(head -c 8 "$f" | od -An -tx1 | tr -d ' \n')" = 89504e470d0a1a0a ] || return 1
+	read -r w h <<< "$(tail -c +17 "$f" | head -c 8 | od -An -tu1 | awk '{ print $1 * 16777216 + $2 * 65536 + $3 * 256 + $4, $5 * 16777216 + $6 * 65536 + $7 * 256 + $8 }')"
+	[ "${w:-0}" -gt 0 ] && [ "${h:-0}" -gt 0 ] || return 1
+	ret "$w $h"
+}
+
+# Every cover that could be the game's, best first, as "score<TAB>set<TAB>name<TAB>encoded name": loose where the
+# matcher is strict, since a person is going to look. A query word found whole or at the start of a word counts,
+# and a number that is in one name and not the other (a sequel) costs a lot. The strict matcher's choice leads.
+fn bc_candidates(query, int max = 16) {
+	local set lst
+	local -a files=()
+
+	for set in boxarts titles snaps; do
+		lst := bc_list "$set" || continue
+		files+=("$lst")
+	done
+	[ "${#files[@]}" -gt 0 ] || return 1
+	awk -F '\t' -v query="$query" "$BC_AWKF"'
+function stopw(w) { return w ~ /^(of|the|and|a|an|in|to|for)$/ }
+function loose(q, qs, n, ns,   i, j, m, nq, nn, qt, nt, hit, part, f, s, g) {
+	nq = 0; nn = 0
+	m = split(q, g, " "); for (i = 1; i <= m; i++) if (!stopw(g[i])) qt[++nq] = g[i]
+	m = split(n, g, " "); for (i = 1; i <= m; i++) if (!stopw(g[i])) nt[++nn] = g[i]
+	if (nq == 0 || nn == 0) return -1
+	hit = 0; part = 0
+	for (i = 1; i <= nq; i++) {
+		f = 0
+		for (j = 1; j <= nn; j++) if (nt[j] == qt[i]) { f = 1; break }
+		if (f) { hit++; continue }
+		if (length(qt[i]) >= 4 && qt[i] !~ /^[0-9]+$/)
+			for (j = 1; j <= nn; j++)
+				if (nt[j] !~ /^[0-9]+$/ && (index(nt[j], qt[i]) == 1 || (length(nt[j]) >= 4 && index(qt[i], nt[j]) == 1))) { part++; break }
+	}
+	if (hit + part == 0) return -1
+	if (nq >= 2 && hit + part < nq / 2) return -1
+	s = 100 * (hit + 0.5 * part) / nq + 40 * hit / nn
+	for (i = 1; i <= nq; i++) if (qt[i] ~ /^[0-9]+$/) { f = 0; for (j = 1; j <= nn; j++) if (nt[j] == qt[i]) f = 1; if (!f) s -= 30 }
+	for (j = 1; j <= nn; j++) if (nt[j] ~ /^[0-9]+$/) { f = 0; for (i = 1; i <= nq; i++) if (qt[i] == nt[j]) f = 1; if (!f) s -= 20 }
+	if (n == q) s += 100
+	else if (ns == qs) s += 80
+	return s
+}
+BEGIN {
+	sq = sprintf("%c", 39)
+	q = alias(norm(query)); qs = squash(q); qn = nwords(q); numbered = (q ~ / [0-9]+$/)
+	if (length(qs) < 2) exit
+}
+FNR == 1 { set = FILENAME; sub(/^.*dos-/, "", set); sub(/\.lst$/, "", set); pri = (set == "boxarts") ? 3 : (set == "titles" ? 1 : 0) }
+{
+	n = norm($1); ns = squash(n)
+	s = loose(q, qs, n, ns)
+	if (s < 0) next
+	t = score(q, qs, qn, numbered, n, ns)
+	if (t >= 0) s += 150 - 10 * t
+	s += pri
+	if ($1 ~ /\(1[0-9][0-9][0-9]\)|\(20[0-9][0-9]\)/) s += 1
+	if (tolower($1) ~ /\((demo|beta|proto|prototype|sample|alpha|preview)/) s -= 10
+	name = $1; sub(/\.png$/, "", name)
+	printf "%.1f\t%s\t%s\t%s\n", s, set, name, $2
+}
+' "${files[@]}" | sort -t "$(printf '\t')" -k1,1nr | head -n "$max"
+}
+
+# A cover's picture for the picker, kept in the cache: its path when it is there or can be fetched and is a PNG.
+fn bc_thumb(set, enc) {
+	local d f tmp u
+
+	d=${XDG_CACHE_HOME:-$HOME/.cache}/hibr/boxer/thumbs/$set
+	f="$d/$enc"
+	if [ -s "$f" ]; then
+		echo "$f"
+		return 0
+	fi
+	mkdir -p "$d" || return 1
+	tmp="$f.part"
+	u := bc_url "$set"
+	bc_get "$u$enc" "$tmp" 8000000 || { command rm -f -- "$tmp"; return 1; }
+	if [ "$(head -c 8 "$tmp" | od -An -tx1 | tr -d ' \n')" != 89504e470d0a1a0a ]; then
+		command rm -f -- "$tmp"
+		return 1
+	fi
+	command mv -f -- "$tmp" "$f" || return 1
+	echo "$f"
+}
+
+# The picker's search, run as a job: the candidates for a query with their pictures, as "set<TAB>name<TAB>path".
+fn bc_pick(query) {
+	local sc set name enc p
+
+	bc_candidates "$query" 16 | while IFS="$(printf '\t')" read -r sc set name enc; do
+		p=$(bc_thumb "$set" "$enc") || continue
+		printf '%s\t%s\t%s\n' "$set" "$name" "$p"
+	done
 }
 
 # What a box's cover is: box (the box art), title (a title screen), own (the
@@ -1014,74 +1135,250 @@ fn bx_askdraw(int id, int h, int w, ...lines) {
 	return 0
 }
 
-fn boxercover_open(int id, arg = "") {
+# --- Find Cover: a search and the candidates side by side, one chosen ----------------
+#
+# Opened from a game's right-click menu with the game's name already in the search
+# and the best match already selected, so Enter is as quick as a blind fetch was. Type
+# to change the search (another spelling, a subtitle) and Enter looks again; the arrows
+# or a click choose; Enter or Use This keeps it. The candidates are the libretro
+# thumbnails project's box art, title screens and screenshots, found loosely (the
+# searching is on this machine; only the pictures are fetched). A picture dropped on
+# the window is the cover too.
+
+fn boxerpick_open(int id, arg = "") {
+	bx_askopen "$id" "$arg"
+	BX[$id]["ptext"]=${BX[$id]["name"]}
+	BX[$id]["pcur"]=${#BX[$id]["ptext"]}
+	BX[$id]["pfocus"]=0
+	BX[$id]["pn"]=0
+	BX[$id]["psel"]=0
+	BX[$id]["ppage"]=0
+	bx_picksearch "$id"
+	return 0
+}
+
+# Look for the covers for what is in the search: a job, whose answer replaces any earlier one.
+fn bx_picksearch(int id) {
 	local n
 
-	bx_askopen "$id" "$arg"
-	BX[$id]["busy"]=1
+	BX[$id]["pmsg"]=
 	if dt_has dt_job; then
-		n := dt_job boxercover "$id" bx_coverdone bc_fetch "$arg"
-		BX[$id]["job"]=$n
+		BX[$id]["pbusy"]=1
+		n := dt_job boxerpick "$id" bx_pickdone bc_pick "${BX[$id]["ptext"]}"
+		BX[$id]["pjob"]=$n
 		return 0
 	fi
-	bc_fetch "$arg"
-	bx_coverreport "$id" $?
+	bx_pickfill "$id" "$(bc_pick "${BX[$id]["ptext"]}")"
 	return 0
 }
 
-fn boxercover_draw(int id, int h, int w, int row, int col) {
-	local n=${BX[$id]["name"]}
+# What a search found, one "set<TAB>name<TAB>path" a line, into the window.
+fn bx_pickfill(int id, found) {
+	local line i=0
 
-	if [ "${BX[$id]["busy"]-}" = 1 ]; then
-		bx_askdraw "$id" "$h" "$w" "Looking for the cover of $n..." "" \
-			"The game's name goes to thumbnails.libretro.com."
-		return 0
-	fi
-	bx_askdraw "$id" "$h" "$w" "${BX[$id]["said"]}"
-	dt_dlgbtns "$id" "$h" "$w" ok ok OK
-}
-
-# What came of looking for a cover, in the window.
-fn bx_coverreport(int id, int st) {
-	BX[$id]["busy"]=0
-	case $st in
-	0) BX[$id]["said"]="Found a cover for ${BX[$id]["name"]}." ;;
-	2) BX[$id]["said"]="What came back was not a PNG, so it was not kept." ;;
-	*) BX[$id]["said"]="No cover found for ${BX[$id]["name"]}, or it could not be fetched." ;;
-	esac
+	while IFS= read -r line; do
+		[ -n "$line" ] || continue
+		BX[$id]["r$i"]=$line
+		i=$((i + 1))
+	done <<< "$found"
+	BX[$id]["pn"]=$i
+	BX[$id]["psel"]=0
+	BX[$id]["ppage"]=0
+	BX[$id]["pbusy"]=0
+	[ "$i" = 0 ] && BX[$id]["pmsg"]="Nothing found for \"${BX[$id]["ptext"]}\": try another spelling, or a word of the title"
 	return 0
 }
 
-# The job for a Fetch Cover window ended: a found cover is shown in Files and
-# the window goes by itself; a miss stays up to say so.
-fn bx_coverdone(int n, int st) {
-	local id=${DTJ[$n]["tag"]}
+fn bx_pickdone(int n, int st) {
+	local id=${DTJ[$n]["tag"]} f
 
 	[ -n "${BX[$id]["ibox"]+x}" ] || return 0
-	bx_coverreport "$id" "$st"
-	if [ "$st" = 0 ]; then
-		dt_notep low "Cover found for ${BX[$id]["name"]}"
-		dt_wantclose "$id"
-	fi
+	[ "${BX[$id]["pjob"]-}" = "$n" ] || return 0
+	f := dt_jobfile "$n" out
+	bx_pickfill "$id" "$(< "$f")"
 	return 0
 }
 
-fn boxercover_key(int id, key) {
+# What a set of covers is called on a tile.
+fn bx_pickkind(set) {
+	case $set in
+	boxarts) ret "box art" ;;
+	titles) ret "title screen" ;;
+	*) ret "screenshot" ;;
+	esac
+}
+
+fn boxerpick_draw(int id, int h, int w, int row, int col) {
+	local on=${BX[$id]["pfocus"]:-0} cur=0 n=${BX[$id]["pn"]:-0} sel=${BX[$id]["psel"]:-0} per=8
+	local tw th pw ph i k r c d w0 h0 rows cols line set name path msg
+
+	dt_wclear "$id"
+	console pen "$DT_INK" "$DT_FACE"
+	console fill -p "w$id" 1 1 $((h - 2)) $((w - 2)) " "
+	console pen "$DT_INK" "$DT_FACE" bold
+	dt_tput "$id" 1 2 "Find a cover for ${BX[$id]["name"]}"
+	console pen "$DT_INK" "$DT_FACE"
+	dt_tput "$id" 2 2 "Search"
+	[ "$on" = 1 ] && cur=${BX[$id]["pcur"]}
+	dt_textdraw "$id" 2 10 $((w - 12)) "${BX[$id]["ptext"]}" "$cur" "$on"
+	dt_wreg "$id" 2 10 $((w - 12)) q
+	tw=$(((w - 4) / 4))
+	th=$(((h - 8) / 2))
+	[ "$th" -lt 5 ] && th=5
+	pw=$((tw - 2))
+	ph=$((th - 3))
+	for ((i = 0; i < per; i++)); do
+		k=$((${BX[$id]["ppage"]:-0} * per + i))
+		[ "$k" -lt "$n" ] || break
+		r=$((4 + (i / 4) * th))
+		c=$((2 + (i % 4) * tw))
+		line=${BX[$id]["r$k"]}
+		path=${line##*$'\t'}
+		name=${line#*$'\t'}
+		name=${name%$'\t'*}
+		set=${line%%$'\t'*}
+		if [ "$k" = "$sel" ]; then
+			console pen "$DT_INK" "$DT_WELL"
+			console fill -p "w$id" "$r" "$c" "$th" "$((tw - 1))" " "
+		fi
+		d := bc_dims "$path" || d="3 4"
+		read -r w0 h0 <<< "$d"
+		cols=$pw
+		rows=$(((h0 * cols + w0 * 2 - 1) / (w0 * 2)))
+		if [ "$rows" -gt "$ph" ]; then
+			rows=$ph
+			cols=$((w0 * rows * 2 / h0))
+		fi
+		[ "$cols" -lt 1 ] && cols=1
+		[ "$rows" -lt 1 ] && rows=1
+		img draw "$path" $((r + 1 + (ph - rows) / 2)) $((c + 1 + (pw - cols) / 2)) "$rows" "$cols" -m auto -p "w$id" 2> /dev/null
+		if [ "$k" = "$sel" ]; then console pen "$DT_INK" "$DT_WELL" bold; else console pen "$DT_INK" "$DT_FACE"; fi
+		dt_tput "$id" $((r + th - 2)) $((c + 1)) "${name:0:$pw}"
+		console pen "$DT_DIM" "$([ "$k" = "$sel" ] && echo "$DT_WELL" || echo "$DT_FACE")"
+		d := bx_pickkind "$set"
+		dt_tput "$id" $((r + th - 1)) $((c + 1)) "$d"
+		console pen "$DT_INK" "$DT_FACE"
+		for ((rows = 0; rows < th; rows++)); do
+			dt_wreg "$id" $((r + rows)) "$c" $((tw - 1)) "t$i"
+		done
+	done
+	console pen "$DT_DIM" "$DT_FACE"
+	if [ "${BX[$id]["pbusy"]:-0}" = 1 ]; then
+		msg="Looking..."
+	elif [ -n "${BX[$id]["pmsg"]-}" ]; then
+		msg=${BX[$id]["pmsg"]}
+	else
+		msg="$n found. Enter keeps the one with the marker; arrows or a click choose; PgDn for more"
+	fi
+	dt_tput "$id" $((h - 4)) 2 "${msg:0:$((w - 4))}"
+	dt_tput "$id" $((h - 3)) 2 "Type to change the search, Enter looks again. Esc closes. Drop a picture here to use it."
+	dt_dlgbtns "$id" "$h" "$w" ok ok "Use This" cancel Cancel
+}
+
+# Keep the picture that has the marker as the game's cover.
+fn bx_pickuse(int id) {
+	local sel=${BX[$id]["psel"]:-0} line path box=${BX[$id]["ibox"]}
+
+	[ "$sel" -lt "${BX[$id]["pn"]:-0}" ] || return 0
+	line=${BX[$id]["r$sel"]}
+	path=${line##*$'\t'}
+	if ! bc_set "$box" "$path" 2> /dev/null; then
+		dt_notep high "That picture could not be used"
+		return 0
+	fi
+	bc_kind_set "$box" picked
+	dt_notep low "Cover set for ${BX[$id]["name"]}"
+	dt_del "$id"
+	return 0
+}
+
+fn boxerpick_key(int id, key) {
+	local res n=${BX[$id]["pn"]:-0} sel=${BX[$id]["psel"]:-0} per=8
+
+	if [ "${BX[$id]["pfocus"]:-0}" = 1 ]; then
+		case $key in
+		escape | tab | down) BX[$id]["pfocus"]=0; return 0 ;;
+		enter) BX[$id]["pfocus"]=0; bx_picksearch "$id"; return 0 ;;
+		esac
+		res := dt_textkey "${BX[$id]["ptext"]}" "${BX[$id]["pcur"]}" "$key" || return 0
+		BX[$id]["ptext"]=${res% *}
+		BX[$id]["pcur"]=${res##* }
+		return 0
+	fi
 	case $key in
-	escape | enter | " ") dt_del "$id" ;;
+	escape) dt_del "$id"; return 0 ;;
+	enter) bx_pickuse "$id"; return 0 ;;
+	tab) BX[$id]["pfocus"]=1; BX[$id]["pcur"]=${#BX[$id]["ptext"]}; return 0 ;;
+	left) [ "$sel" -gt 0 ] && sel=$((sel - 1)) ;;
+	right) [ $((sel + 1)) -lt "$n" ] && sel=$((sel + 1)) ;;
+	up)
+		if [ "$sel" -ge 4 ]; then
+			sel=$((sel - 4))
+		else
+			BX[$id]["pfocus"]=1
+			BX[$id]["pcur"]=${#BX[$id]["ptext"]}
+			return 0
+		fi
+		;;
+	down) [ $((sel + 4)) -lt "$n" ] && sel=$((sel + 4)) ;;
+	pagedown | pgdn) sel=$((sel + per)); [ "$sel" -ge "$n" ] && sel=$((n - 1)) ;;
+	pageup | pgup) sel=$((sel - per)); [ "$sel" -lt 0 ] && sel=0 ;;
+	*)
+		if [ "${#key}" = 1 ] || [ "$key" = backspace ]; then
+			BX[$id]["pfocus"]=1
+			BX[$id]["pcur"]=${#BX[$id]["ptext"]}
+			res := dt_textkey "${BX[$id]["ptext"]}" "${BX[$id]["pcur"]}" "$key" || return 0
+			BX[$id]["ptext"]=${res% *}
+			BX[$id]["pcur"]=${res##* }
+		fi
+		return 0
+		;;
+	esac
+	[ "$sel" -lt 0 ] && sel=0
+	BX[$id]["psel"]=$sel
+	BX[$id]["ppage"]=$((sel / per))
+	return 0
+}
+
+# The mouse comes here and not to _click: a press on a tile chooses it, a second on the same one keeps it.
+fn boxerpick_mouse(int id, act, btn, int r, int c, mods = "") {
+	local tag k
+
+	case ${act##*-} in press) ;; *) return 0 ;; esac
+	tag := dt_hit "$id" "$r" "$c" || return 0
+	case $tag in
+	t[0-9]*)
+		k=$((${BX[$id]["ppage"]:-0} * 8 + ${tag#t}))
+		[ "$k" -lt "${BX[$id]["pn"]:-0}" ] || return 0
+		if [ "${BX[$id]["psel"]:-0}" = "$k" ]; then
+			bx_pickuse "$id"
+		else
+			BX[$id]["psel"]=$k
+		fi
+		BX[$id]["pfocus"]=0
+		;;
+	q) BX[$id]["pfocus"]=1; BX[$id]["pcur"]=${#BX[$id]["ptext"]} ;;
+	ok) bx_pickuse "$id" ;;
+	cancel) dt_del "$id" ;;
 	esac
 	return 0
 }
 
-fn boxercover_click(int id, int r, int c, btn = "") {
-	local tag
+# A picture dropped on the window is the cover, as it is.
+fn boxerpick_drop(int id, int r, int c, op, ...paths) {
+	local box=${BX[$id]["ibox"]}
 
-	tag := dt_hit "$id" "$r" "$c" || return 0
-	[ "$tag" = ok ] && dt_del "$id"
+	[ -n "${paths[0]-}" ] || return 0
+	if bc_set "$box" "${paths[0]}" 2> /dev/null; then
+		dt_notep low "Cover set for ${BX[$id]["name"]}"
+		dt_del "$id"
+	else
+		dt_notep high "A cover must be a PNG"
+	fi
 	return 0
 }
 
-fn boxercover_close(int id) {
+fn boxerpick_close(int id) {
 	unset "BX[$id]"
 }
 

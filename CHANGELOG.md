@@ -4,6 +4,14 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## Boxer 1.25 (Oct 31)
+- **Find Cover** replaces Fetch Cover: a window with the game's name already searched, the candidates
+  side by side as pictures (box art, title screens, screenshots, found loosely, so different spellings
+  show together), the best one marked so Enter keeps it; type to change the search, arrows or a click to
+  choose, Esc to close, a dropped picture to use it. Nothing to answer.
+- Downloads use hibr's own `fetch` (HTTPS, certificates checked) instead of `curl`, which is the
+  fallback.
+
 ## Boxer 1.24 (Oct 31)
 - **Box art, matched better and with no questions.** The matcher now reads names the way the
   libretro list writes them (colons as underscores, "The" at the end, years, demos, apostrophes),

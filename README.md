@@ -36,7 +36,7 @@ feature needs is in the table at the end of "Playing".
 - **Get Info.** Right-click a game in Files for **Get Info** (its own settings, written into its
   `boxer.json`; `default` means the Control Panel's): name (the folder is renamed with it), program,
   speed, graphics, 3dfx Voodoo and its speed, sound card and its IRQ, DMA and port, MIDI, mouse,
-  capture, **Speed Limit** and **CPU**. The same menu has **Fetch Cover** and **Game Is Already
+  capture, **Speed Limit** and **CPU**. The same menu has **Find Cover** and **Game Is Already
   Installed**.
 - **Quitting.** **Close When Game Ends** closes the window when the game ends (typing `EXIT` at the
   DOS prompt ends it); **Confirm On Exit** asks before closing a game that is playing. Both are on
@@ -98,27 +98,35 @@ which DOSBox Pure plays through; **MIDI Output** chooses one, for every game or 
 A game's cover is `.cover.png` in its box (`cover.png` is read too). One you put there always wins;
 one that came with a game, or sits beside it, is taken in on import.
 
-**Fetching** is from the libretro thumbnails project (https://thumbnails.libretro.com/DOS/): the
-game's box art, or, for a game with none, its title screen (which is at least never another game's
-box; Boxer records which it is). It sends the game's name to that server, so it is **off by default**.
+**Find Cover** (right-click a game in Files) is the way to choose one. It opens with the game's name
+already in the search and the search already run, and shows the candidates side by side as pictures:
+the libretro thumbnails project's box art, its title screens and its screenshots, each labelled.
+The best match is already marked, so **Enter keeps it**. The arrow keys or a click choose another (a
+second click keeps it), **typing changes the search** (another spelling, a subtitle) and Enter
+looks again, **Esc** closes with nothing changed, and a **picture dropped on the window** is the
+cover as it is (a PNG). Nothing is asked: choosing Find Cover and typing the search is the asking.
+The search itself runs on this machine against the project's list of names (fetched once, kept a
+month); only the pictures are downloaded, with hibr's own `fetch`, so no `curl` is needed.
 
-- **Fetch Cover** (right-click a game in Files) looks at once and says what it found: choosing it is
-  the asking, there is no question. A found cover closes the window by itself.
-- **Control Panel > Boxer > Fetch Box Art**, when on, gives every import its cover, and a game that
-  has none gets one when it is renamed to its proper name. Inside the desktop each fetch is a
-  background job, one at a time, with a note when it is done; from a shell it waits.
-- **Matching** is careful, because a wrong cover is worse than none. Names are made alike first
-  (case, `(year)` and `[tags]`, apostrophes, a leading or trailing "the", `&` and "and", spaces
-  ("SimCity", "Sim City"), `keen1` as "keen 1", Roman numerals), then the same name wins, then a
-  numbered game ("Larry 2") finds the title with its subtitle, a format suffix (`sci`, `vga`) is
-  allowed, and one slip of a letter in a long name is forgiven, never in a number or at the end
-  (which is the difference between a game and its sequel). A series name alone is not guessed at, a
-  sequel is not taken for its first game, and a demo is the last choice. A few short folder names
-  (PRINCE, LSL2, KQ5, WOLF3D) are spelled out first. Against the real 4,659-name list, every name
-  finds itself and none finds another game's.
+**Automatic fetching** is separate and **off by default**, because it sends the game's name to a
+server with nobody asking: Control Panel > Boxer > Fetch Box Art. When on, every import gets its cover
+(box art, else the title screen, which is at least never another game's box; Boxer records which), and a
+game with none gets one when it is renamed. Inside the desktop each fetch is a background job, one at a
+time, with a note when it is done; from a shell it waits. `boxer.hibr cover BOX [PNG]` fetches or sets
+one, `boxer.hibr covers` fills in the shelf (and swaps a title screen for box art where there is some).
+
+- **Automatic matching is careful, because a wrong cover is worse than none** (Find Cover is loose,
+  because you are looking). Names are made alike first (case, `(year)` and `[tags]`, apostrophes,
+  a leading or trailing "the", `&` and "and", spaces ("SimCity", "Sim City"), `keen1` as "keen 1",
+  Roman numerals), then the same name wins, then a numbered game ("Larry 2") finds the title with
+  its subtitle, a format suffix (`sci`, `vga`) is allowed, and one slip of a letter in a long name is
+  forgiven, never in a number or at the end (which is the difference between a game and its sequel).
+  A series name alone is not guessed at, a sequel is not taken for its first game, and a demo is the
+  last choice. A few short folder names (PRINCE, LSL2, KQ5, WOLF3D) are spelled out first. Against the
+  real 4,659-name list, every name finds itself and none finds another game's.
 - A download is kept only if it is a PNG of a sane size.
-- From a shell: `boxer.hibr cover BOX [PNG]` fetches or sets one, `boxer.hibr covers` fills in the
-  shelf (and swaps a title screen for box art where there is some).
+- Only PNG covers are shown by Files, so a picture from the open web (mostly JPEG) cannot be used until
+  hibr can save one as PNG.
 
 ## What it runs on
 

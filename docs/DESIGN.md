@@ -15,7 +15,7 @@ has it version by version and the [README](../README.md) is the manual.
 - **The Shelf is gone.** From Boxer 1.0 the **Boxer** window (`apps/Games/boxer.hibr`) imports
   (drop, or Import), a game is a `NAME.boxer` folder with a `boxer.json` (not `gamebox.json`), Files
   shows it with its cover and plays it on a double click (`apps/boxerplay.hibr`), and the right-click
-  menu has Get Info, Fetch Cover and Game Is Already Installed. Sections 1, 4, 5 and 8 below describe
+  menu has Get Info, Find Cover and Game Is Already Installed. Sections 1, 4, 5 and 8 below describe
   the sketch.
 - **The hibr prerequisites all shipped**, as tickets filed from here: the opener and bundle verbs
   (#318), covers as a bundle's icon (#336, hibr 0.99.281), hover with the pointer's pixel (#370,
@@ -27,7 +27,7 @@ has it version by version and the [README](../README.md) is the manual.
 - **Speed.** DOS games never sleep, so an emulator left to run flat out spends a core on their waiting
   loops. A Speed Limit by era (Pentium 100 by default) caps it; Boxer's own drawing costs 6 to 13% of a
   core at 70 frames a second (measured on an i3-N300). See the README.
-- **Box art** is matched against the libretro thumbnails list with rules that prefer no cover to a wrong
+- **Box art**: Find Cover shows the candidates and lets you choose; automatic fetching is matched against the libretro thumbnails list with rules that prefer no cover to a wrong
   one, and falls back to a title screen; fetching is a background job and is off until switched on.
 - **Not done:** Homebrew and AUR packages (only the deb exists); another emulator (DOSBox-X for
   Windows 9x or PC-98 would be a second core, and an ADR); save states and rewind; a real game on
@@ -69,7 +69,7 @@ Boxer-style shelf of games, packaged properly.
 
 ```
 hibr-retro-gaming/
-  apps/Games/boxer.hibr          the Boxer window (import, Get Info, Fetch Cover) -> hibr-apps
+  apps/Games/boxer.hibr          the Boxer window (import, Get Info, Find Cover) -> hibr-apps
   apps/boxerplay.hibr            the game window, a # part: of boxer              -> hibr-apps
   control-panel/boxerset.hibr    the Control Panel pane, a # part: of boxer       -> hibr-apps
   mods/retro/                    the libretro frontend as a hibr module (the deb)

@@ -854,10 +854,10 @@ out, err = imp("mkdir -p %s/bun/X.boxer %s/bun/Y.dir; dt_isbundle %s/bun/X.boxer
 check("a .boxer folder is a bundle for Boxer, and has Get Info... as a verb that opens the settings window",
       "bundle" in out and "plain" not in out and "Get Info..." in out and ":boxerinfo" in out, out + err)
 
-# The verbs Files offers on a .boxer folder: Get Info, Fetch Cover and Game Is Already Installed, each a small window.
+# The verbs Files offers on a .boxer folder: Get Info, Find Cover and Game Is Already Installed, each a small window.
 out, err = imp("mkdir -p %s/bun/V.boxer; dt_openverbs %s/bun/V.boxer; for i in \"${DT_OVLIST[@]}\"; do echo \"verb=${DT_OPENVERBS[$i][label]}\"; done" % (D, D))
-check("a .boxer folder is offered Get Info, Fetch Cover and Game Is Already Installed",
-      all(w in out for w in ("verb=Get Info...", "verb=Fetch Cover...", "verb=Game Is Already Installed...")), out + err)
+check("a .boxer folder is offered Get Info, Find Cover and Game Is Already Installed",
+      all(w in out for w in ("verb=Get Info...", "verb=Find Cover...", "verb=Game Is Already Installed...")), out + err)
 t = appdesk("boxerdone", os.path.join(shelf, "Beta Racer.boxer"))
 t.collect(1.0)
 check("Game Is Already Installed says so when the game is not waiting for an install", "not waiting to be installed" in t.screen().text(), t.screen())
@@ -1018,25 +1018,61 @@ bad = [(cases[i][0], cases[i][1], (got.get(i, "?") or None)) for i in range(len(
        if (got.get(i, "?") or None) != ((cases[i][1] + ".png") if cases[i][1] else None)]
 check("the matcher finds the game's cover by sloppier names, and no other game's, in %d cases" % len(cases), not bad, (bad, q.stderr[-300:]))
 
-# Fetch Cover from a game's right-click menu looks at once: no question, a found cover closes the window by itself and
-# is in the box, a miss says so and waits for OK.
-wb = boxnamed("Prince of Persia")
-t = appdesk("boxercover", wb)
-t.collect(2.5)
-check("Fetch Cover looks at once and asks nothing: no Fetch or Cancel to press", "Fetch the box art" not in t.screen().text()
-      and "Cancel" not in t.screen().text(), t.screen())
-check("a found cover is in the box and the window has gone by itself", lit(wb + "/.cover.png") and "Looking for the cover" not in t.screen().text()
-      and "Found a cover" not in t.screen().text(), t.screen())
-t.close()
-wb = boxnamed("Nothing Like This")
-t = appdesk("boxercover", wb)
-t.collect(2.5)
-check("a game with no cover to be had says so and stays up for OK", "No cover found for" in t.screen().text() and "OK" in t.screen().text()
-      and not os.path.exists(wb + "/.cover.png"), t.screen())
+# Find Cover, from a game's right-click menu: the search is filled in with the game's name and has run, the best match is
+# already marked so Enter keeps it, the search can be changed and run again, and a miss says so. No question to answer.
+def covers_at(t, secs=6.0):
+    for _ in range(int(secs / 0.25)):
+        t.collect(0.25)
+        if "Use This" in t.screen().text() and "Looking" not in t.screen().text():
+            break
+    return t.screen().text()
+
+wb = boxnamed("Dungeon Keeper")
+t = appdesk("boxerpick", wb)
+tx = covers_at(t)
+check("Find Cover opens with the game's name in the search and its candidates side by side, no question to answer",
+      "Find a cover for" in tx and "Dungeon Keeper" in tx and "box art" in tx and "title screen" in tx and "Use This" in tx
+      and "Fetch the box art" not in tx, t.screen())
 t.send(b"\r")
-t.collect(0.8)
-check("and Enter closes it", "No cover found for" not in t.screen().text(), t.screen())
+t.collect(1.0)
+check("Enter keeps the best match as the cover, and the window goes", lit(wb + "/.cover.png")
+      and open(wb + "/.cover.png", "rb").read() == open(art + "/Named_Boxarts/Dungeon Keeper (1997).png", "rb").read()
+      and "Find a cover for" not in t.screen().text(), t.screen())
+check("and the box says it was picked", '"kind": "picked"' in open(wb + "/boxer.json").read(), open(wb + "/boxer.json").read())
 t.close()
+
+wb = boxnamed("Dungeon Keeper")
+t = appdesk("boxerpick", wb)
+covers_at(t)
+t.send(b"\x1b")
+t.collect(0.8)
+check("Escape closes it and writes nothing", not os.path.exists(wb + "/.cover.png") and "Find a cover for" not in t.screen().text(), t.screen())
+t.close()
+
+wb = boxnamed("Zzz Unknown Game")
+t = appdesk("boxerpick", wb)
+tx = covers_at(t, 5.0)
+check("a name with no candidates says so and how to look again", "Nothing found" in tx and "another spelling" in tx, t.screen())
+t.send(b"\t")
+t.send(b"\x7f" * 20 + b"Leisure Suit Larry 2\r")
+tx = covers_at(t)
+check("the search is changed by typing, and Enter looks again", "Leisure Suit Larry 2" in tx and "box art" in tx and "Nothing found" not in tx, t.screen())
+t.send(b"\r")
+t.collect(1.0)
+check("and the one found is kept", lit(wb + "/.cover.png") and open(wb + "/.cover.png", "rb").read() == open(
+      art + "/Named_Boxarts/Leisure Suit Larry 2 - Goes looking for Love in Several Wrong Places (1988).png", "rb").read(), t.screen())
+t.close()
+
+wb = boxnamed("Dungeon Keeper")
+t = appdesk("boxerpick", wb)
+tx = covers_at(t)
+pos = t.screen().find("box art")
+if pos:
+    t.send(sx.press(pos[0] - 2, pos[1] + 2) + sx.release(pos[0] - 2, pos[1] + 2))
+    t.collect(1.0)
+check("a click on the picture marked keeps it", lit(wb + "/.cover.png") and "Find a cover for" not in t.screen().text(), (pos, t.screen()))
+t.close()
+
 shutil.rmtree(D + "/cache", True)
 hits.clear()
 src = os.path.join(D, "artsrc", "Dungeon Keeper")
