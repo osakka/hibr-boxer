@@ -61,9 +61,11 @@ feature needs is in the table at the end of "Playing".
 
 ### Full screen
 
-**Alt+Enter** takes the whole display, with no menu bar or frame; **Ctrl+F11** (the desktop's own
-Leave Full Screen key) or Alt+Enter again gives it back. The key is Control Panel > Boxer > Full
-Screen Key. On a hibr older than 0.99.380 Alt+Enter only maximises, and says so.
+Full screen is the desktop's own, for every window, not Boxer's: **Alt+Enter** (Control Panel > Shortcuts >
+Full Screen, also Window > Full Screen and the title bar's menu) takes the whole display, with no menu bar
+or frame, and the picture stays; **Ctrl+F11** (Leave Full Screen) or Alt+Enter again gives it back. A
+short note says so when a game goes full screen. It needs hibr 0.99.403; on an older hibr there is only
+Window > Zoom.
 
 ### Speed
 
@@ -91,7 +93,7 @@ which DOSBox Pure plays through; **MIDI Output** chooses one, for every game or 
 | hover, and the pointer to the pixel | hibr 0.99.304; Blit, kitty or foot |
 | pointer hiding while captured | hibr 0.99.311; Blit 0.2.8 |
 | pointer lock | hibr 0.99.365 and `hibr-retro` 0.1.6; Blit 0.2.42; Restart Desktop after upgrading |
-| true full screen | hibr 0.99.380; 0.99.392 for two displays |
+| full screen (the desktop's Full Screen key) | hibr 0.99.403; 0.99.392 for two displays |
 
 ## Box art
 

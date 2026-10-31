@@ -31,7 +31,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.31
+app boxerplay "A DOS game from a gamebox" 0.32
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -43,12 +43,12 @@ BP_CORE="${BP_CORE-dosbox_pure}"
 BP_SYS="${BP_SYS-${XDG_DATA_HOME:-$HOME/.local/share}/hibr/retro/system}"
 
 # What Control Panel > Boxer sets, for every game; a game's own settings
-# (its Info drawer in the shelf) override the picture, the shape and what
-# DOSBox is told. BX_FULLKEY is the key that fills the display and gives it
-# back, and is the game's rather than the desktop's.
+# (its Get Info) override the picture, the shape and what DOSBox is told.
+# Full screen is the desktop's own (Control Panel > Shortcuts > Full Screen,
+# hibr 0.99.403; the Window menu), not the game's: a key the desktop has
+# assigned is handed back to it, below.
 BX_PIC="${BX_PIC-follow}"
 BX_ASPECT="${BX_ASPECT-4:3}"
-BX_FULLKEY="${BX_FULLKEY-alt-enter}"
 BX_HOLD="${BX_HOLD-120}"
 BX_LIMIT="${BX_LIMIT-pentium}"
 BX_SOUND="${BX_SOUND-on}"
@@ -62,7 +62,7 @@ fi
 BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
-command -v dt_keep > /dev/null && dt_keep BX_PIC BX_ASPECT BX_FULLKEY BX_HOLD BX_LIMIT BX_SOUND BX_MOUSE BX_MOUSEV BX_CARD BX_MIDIDIR BX_MIDI
+command -v dt_keep > /dev/null && dt_keep BX_PIC BX_ASPECT BX_HOLD BX_LIMIT BX_SOUND BX_MOUSE BX_MOUSEV BX_CARD BX_MIDIDIR BX_MIDI
 
 # --- what a folder holds, the way Boxer reckons it -----------------------------
 #
@@ -872,33 +872,6 @@ bp_quityes() {
 	[ -n "$id" ] && [ -n "${BP[$id]["box"]-}" ] && dt_del "$id"
 }
 
-# The full-screen key: the whole display with no bar or frame where hibr can (dt_fullscreen,
-# hibr #405, from 0.99.380), else the window made as large as the desktop allows (dt_zoom), as
-# before. BX_TRUEFULL=off keeps the zoom.
-fn bp_full(int id) {
-	if [ "${BX_TRUEFULL-on}" != off ] && dt_has dt_fullscreen && dt_fullscreen "$id" toggle; then
-		return 0
-	fi
-	if [ "${BX_TRUEFULL-on}" = off ]; then
-		bp_why "$id" "true full screen is off (BX_TRUEFULL=off)"
-	elif ! dt_has dt_fullscreen; then
-		bp_why "$id" "this hibr has no true full screen; it needs 0.99.380 or newer, so the window is made as large as it can be instead"
-	else
-		bp_why "$id" "the desktop would not take full screen for this window"
-	fi
-	dt_zoom "$id"
-	return 0
-}
-
-# Why a thing was not done the better way: the desktop's log and, once per window, a note.
-fn bp_why(int id, text) {
-	dt_has dt_log && dt_log "boxer: ${BP[$id]["name"]-game} (window $id): full screen: $text"
-	[ -n "${BP[$id]["whyfs"]-}" ] && return 0
-	BP[$id]["whyfs"]=1
-	dt_notep low "Full screen: $text"
-	return 0
-}
-
 # The desktop tells a window when full screen starts or ends, ended by it or not.
 fn boxerplay_fullscreen(int id, on) {
 	BP[$id]["fs"]=0
@@ -908,7 +881,7 @@ fn boxerplay_fullscreen(int id, on) {
 	if [ "${BP[$id]["cap"]-0}" = 1 ] && dt_has dt_pointer; then dt_pointer "$id" none; fi
 	if [ "$on" = on ]; then
 		BP[$id]["fs"]=1
-		dt_notep high "Full screen: ${BX_FULLKEY} or ${DT_KEYS["fsleave"]-ctrl-f11} leaves it"
+		dt_notep high "Full screen: ${DT_KEYS["fullscreen"]-alt-enter} or ${DT_KEYS["fsleave"]-ctrl-f11} leaves it"
 	fi
 	return 0
 }
@@ -921,10 +894,6 @@ fn boxerplay_key(int id, key) {
 		return 0
 	fi
 	[ -n "$p" ] || return 1
-	if [ "$key" = "$BX_FULLKEY" ]; then
-		bp_full "$id"
-		return 0
-	fi
 	if [ "$key" = "${BX_RELKEY-f12}" ] && [ "${BP[$id]["cap"]-}" = 1 ]; then
 		bp_capture "$id" 0
 		return 0

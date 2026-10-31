@@ -4,6 +4,12 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## Boxer 1.26 (Nov 1)
+- **Full screen is the desktop's own** (hibr 0.99.403): Boxer's own full-screen key and its Control Panel
+  row are gone, and so is the zoom fallback. Alt+Enter, Window > Full Screen and the title bar's menu
+  work on a game like any window, and Ctrl+F11 leaves it. A key the desktop has assigned is handed back
+  to it, so nothing is lost. Needs hibr 0.99.403.
+
 ## Boxer 1.25 (Oct 31)
 - **Find Cover** replaces Fetch Cover: a window with the game's name already searched, the candidates
   side by side as pictures (box art, title screens, screenshots, found loosely, so different spellings

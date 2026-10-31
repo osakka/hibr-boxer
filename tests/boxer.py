@@ -207,7 +207,7 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     json.dump(lj, open(lockbox + "/boxer.json", "w"))
     if os.path.exists(D + "/lock.dtlog"):
         os.remove(D + "/lock.dtlog")
-    t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on", "BX_FULLKEY": "alt-enter"}, ["lock"], pre)
+    t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)
     t.collect(2.5)
     t.send(sx.press(14, 45) + sx.release(14, 45))
     t.collect(1.5)
@@ -264,32 +264,14 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     t.close()
 
 
-# The full-screen key asks the desktop for the whole display where it can (hibr #405), and zooms where it cannot.
-if os.path.exists(D + "/fs.log"):
-    os.remove(D + "/fs.log")
-t = desk("", box, False, {"BX_FULLKEY": "f11"}, None, 'fn dt_fullscreen(int id, how) { echo "$id:$how" >> %s/fs.log; return 0; }' % D)
-t.collect(2.0)
-t.send(b"\x1b[23~")
-t.collect(1.0)
-check("the full-screen key asks the desktop for full screen (toggle) when it has it",
-      os.path.exists(D + "/fs.log") and open(D + "/fs.log").read().split()[-1].endswith(":toggle"), open(D + "/fs.log").read() if os.path.exists(D + "/fs.log") else "no call")
-t.close()
-t = desk("", box, False, {"BX_FULLKEY": "f11", "BX_TRUEFULL": "off"}, None, 'fn dt_fullscreen(int id, how) { echo "$id:$how" >> %s/fs2.log; return 0; }' % D)
-t.collect(2.0)
-w0 = t.screen().text()
-t.send(b"\x1b[23~")
-t.collect(1.0)
-check("and zooms the window as before when true full screen is off (BX_TRUEFULL=off), and says why", t.screen().text() != w0 and not os.path.exists(D + "/fs2.log") and "true full screen is off" in t.raw.decode("utf-8", "replace"), t.screen())
-t.close()
-
-# True full screen on a hibr that has it (0.99.380): Alt+Enter takes the whole display, the picture stays, the desktop's
+# True full screen, the desktop's own key (hibr 0.99.403): Alt+Enter takes the whole display, the picture stays, the desktop's
 # leave key and Alt+Enter both give it back, in half blocks and in pixels.
-if os.path.exists(HIBR_TREE + "/programs/desktop/wm/fullscreen.hibr"):
+if 'DT_KEYS["fullscreen"]' in open(HIBR_TREE + "/programs/desktop/wm/settings.hibr").read():
     def fst(t):
         tx = t.screen().text()
         return ("File  Edit" in tx, "Test Game" in tx, tx.count("\u2580"), t.raw.count(b"a=T"))
     for pix in (False, True):
-        t = desk("", box, pix, {"BX_FULLKEY": "alt-enter"})
+        t = desk("", box, pix)
         t.collect(2.5)
         b0 = fst(t)
         t.send(b"\x1b\r")
@@ -689,7 +671,7 @@ q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\n. %s/system/p
                    timeout=60)
 out = q.stdout
 check("the pane lists the shelf folder, rendering, shape, full screen key, key hold, mouse and sound",
-      all(w in out for w in ("Folder", "Rendering", "Shape", "Full Screen Key", "Release Mouse Key", "Key Held", "Mouse", "Mouse Capture", "Speed Limit", "Confirm On Exit", "Close When Game Ends", "Sound")), out + q.stderr)
+      all(w in out for w in ("Folder", "Rendering", "Shape", "Release Mouse Key", "Key Held", "Mouse", "Mouse Capture", "Speed Limit", "Confirm On Exit", "Close When Game Ends", "Sound")), out + q.stderr)
 check("a row steps through its choices: the mouse, relative by default, goes to off; sound toggles",
       "mouse=off" in out and "sound=off" in out, out + q.stderr)
 check("the pane has Fetch Box Art, off until it is turned on", "Fetch Box Art|off" in out, out + q.stderr)
