@@ -4,6 +4,13 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## Boxer 1.28 (Nov 1)
+- **Find Cover found nothing, always (1.25 to 1.27): fixed.** Downloads through hibr's `fetch` failed
+  inside the desktop (the variable `fetch` sets was not declared there), so every list came back empty
+  and the window said "Nothing found". It now declares it, falls back to `curl` if `fetch` fails, and
+  says "Could not get the list of covers: is this machine online?" when no list can be had. Words such
+  as "box", "cover" and "art" in a search are ignored. The suite now runs the `fetch` path for real.
+
 ## Boxer 1.27 (Nov 1)
 - `bx_games` and `bx_setcover`: what another app calls to make a picture a game's cover (for the browser's
   "Use as cover for a game…"). A PNG as it is; another kind through hibr's `img save` once it has one.

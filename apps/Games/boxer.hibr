@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.27
+app boxer "DOS games, one folder to a game" 1.28
 # modules: img retro fetch
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -159,6 +159,8 @@ fn bx_dosify(root) {
 # job, one at a time, and says how it went in a note; from a shell it waits.
 
 declare -gA BCJ
+# `fetch` sets this; a desktop file under strict vars declares what a module sets for it.
+FETCH_STATUS=0
 BX_ART="${BX_ART-off}"
 command -v dt_keep > /dev/null && dt_keep BX_ART
 
@@ -221,18 +223,18 @@ fn bc_get(url, out, int max) {
 	local pr='=https'
 
 	[ -n "${BX_ART_URL-}" ] && pr='=http,https'
+	case $url in
+	https://*) ;;
+	http://*) [ -n "${BX_ART_URL-}" ] || return 1 ;;
+	*) return 1 ;;
+	esac
 	if need fetch 2> /dev/null; then
-		case $url in
-		https://*) ;;
-		http://*) [ -n "${BX_ART_URL-}" ] || return 1 ;;
-		*) return 1 ;;
-		esac
-		fetch "$url" -o "$out" -t 30 > /dev/null 2>&1 || { command rm -f -- "$out"; return 1; }
-		if [ "$(stat -c %s "$out" 2> /dev/null || echo 0)" -gt "$max" ]; then
-			command rm -f -- "$out"
-			return 1
+		if fetch "$url" -o "$out" -t 30 > /dev/null 2>&1; then
+			if [ "$(stat -c %s "$out" 2> /dev/null || echo 0)" -le "$max" ]; then
+				return 0
+			fi
 		fi
-		return 0
+		command rm -f -- "$out"
 	fi
 	command -v curl > /dev/null || return 1
 	curl -fsSL --proto "$pr" --proto-redir "$pr" --max-time 30 --max-filesize "$max" -o "$out" -- "$url" 2> /dev/null
@@ -423,7 +425,7 @@ fn bc_candidates(query, int max = 16) {
 	done
 	[ "${#files[@]}" -gt 0 ] || return 1
 	awk -F '\t' -v query="$query" "$BC_AWKF"'
-function stopw(w) { return w ~ /^(of|the|and|a|an|in|to|for)$/ }
+function stopw(w) { return w ~ /^(of|the|and|a|an|in|to|for|box|boxart|cover|covers|art|front|dos|pc|game|video|ms)$/ }
 function loose(q, qs, n, ns,   i, j, m, nq, nn, qt, nt, hit, part, f, s, g) {
 	nq = 0; nn = 0
 	m = split(q, g, " "); for (i = 1; i <= m; i++) if (!stopw(g[i])) qt[++nq] = g[i]
@@ -492,12 +494,15 @@ fn bc_thumb(set, enc) {
 
 # The picker's search, run as a job: the candidates for a query with their pictures, as "set<TAB>name<TAB>path".
 fn bc_pick(query) {
-	local sc set name enc p
+	local sc set name enc p found
 
-	bc_candidates "$query" 16 | while IFS="$(printf '\t')" read -r sc set name enc; do
+	found=$(bc_candidates "$query" 16) || return 1
+	while IFS="$(printf '\t')" read -r sc set name enc; do
+		[ -n "$enc" ] || continue
 		p=$(bc_thumb "$set" "$enc") || continue
 		printf '%s\t%s\t%s\n' "$set" "$name" "$p"
-	done
+	done <<< "$found"
+	return 0
 }
 
 # What a box's cover is: box (the box art), title (a title screen), own (the
@@ -1224,6 +1229,9 @@ fn bx_pickdone(int n, int st) {
 	[ "${BX[$id]["pjob"]-}" = "$n" ] || return 0
 	f := dt_jobfile "$n" out
 	bx_pickfill "$id" "$(< "$f")"
+	if [ "$st" != 0 ]; then
+		BX[$id]["pmsg"]="Could not get the list of covers from thumbnails.libretro.com: is this machine online?"
+	fi
 	return 0
 }
 

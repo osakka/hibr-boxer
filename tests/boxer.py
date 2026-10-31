@@ -1068,6 +1068,30 @@ open(D + "/iface.jpg", "wb").write(b"\xff\xd8\xff\xe0" + bytes(300))
 out, err = imp("bx_setcover '%s' '%s/iface.jpg'; echo \"st=$?\"" % (gb, D))
 check("and a picture that is not a PNG, with no way here to convert it, is refused and nothing is kept", "st=1" in out and not os.path.exists(gb + "/.cover.png"), (out, err))
 
+MODENV = dict(os.environ, **dict(ENVBASE, HIBR_MODPATH=ROOT + "/build:/usr/lib/hibr:" + os.path.dirname(sx.HIBR) + "/../lib/hibr"))
+# The download goes through hibr's fetch (not curl): under a desktop's strict vars it needs FETCH_STATUS declared, which a
+# test that fell back to curl would never have noticed. curl is made to fail here so only fetch can succeed.
+r_ = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\ncurl() { return 1; }; need fetch && bc_get '%sDungeon%%20Keeper%%20(1997).png' '%s/viafetch.png' 1000000; echo \"st=$?\"" % (load("console", RETRO), DESK, ROOT, ROOT, url, D)], capture_output=True, text=True, env=MODENV, timeout=60)
+out, err = r_.stdout, r_.stderr
+q = subprocess.run([hb, "-c", "need fetch"], capture_output=True, text=True, env=MODENV, timeout=30)
+if q.returncode == 0:
+    check("a download through hibr's fetch works in a desktop file (curl made to fail)", "st=0" in out and os.path.exists(D + "/viafetch.png") and lit(D + "/viafetch.png"), (out, err))
+
+# Words that describe the picture and not the game are not searched for: "<game> box cover" finds the game.
+q = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/Games/boxer.hibr\nbc_candidates 'Dungeon Keeper box cover' 3" % (load("console", RETRO), DESK, ROOT)],
+                   capture_output=True, text=True, env=dict(os.environ, **dict(ENVBASE, XDG_CACHE_HOME=D + "/cache")), timeout=60)
+check("a search for \"<game> box cover\" finds the game", "Dungeon Keeper" in q.stdout, (q.stdout, q.stderr[-200:]))
+
+# A real JPEG becomes a PNG cover where hibr can save one (img save, hibr 0.99.404).
+import base64
+open(D + "/tiny.jpg", "wb").write(base64.b64decode("/9j/4AAQSkZJRgABAgAAAQABAAD//gAQTGF2YzU5LjM3LjEwMAD/2wBDAAgQEBMQExYWFhYWFhoYGhsbGxoaGhobGxsdHR0iIiIdHR0bGx0dICAiIiUmJSMjIiMmJigoKDAwLi44ODpFRVP/xABzAAEBAAAAAAAAAAAAAAAAAAAFBgEBAAMBAAAAAAAAAAAAAAAABgIDAQQQAAICAQMEAwEBAAAAAAAAAAIBAxESAAQFMSIhE1IyYUEUEQACAQIGAQMFAQAAAAAAAAACAQMRBDEAEyEFEkFhFCKBJJJCUrH/wAARCAAQABADARIAAhIAAxIA/9oADAMBAAIRAxEAPwCZ9MnHcbCQGQSSAMjKMiTo8SFJrFqhPu/W/LWqGYYN5x+3X+iIMI44m7EqwEBt9yq8OmlPG2FrOfeWIJW67SCjH8SqP6relfXJzjuXmjuNEbKSRrymWG+9FE9lVZ2KZ3A3gmh+yGEYGluOubKQq/0VENfAqixdee7A+M924xK6G70miBNIVA6Nprv2VSSeFG0sq77eDw25CSIAGJEPsAAFWDxRYpY91ETHyll10Jy8U/IzSRDBKNVTQEd/X+UvjoZxt5czqks0stcdQ2b27eSba+mUllxVvBDqx30U7FbiCHatcaSl/njN8EITnfnJ2J2nt/brufWLWTUnUEXT5+dvXM+JljmK8CaQLY7rR+EhJEGkq4ExZVW+Cpn/2Q=="))
+q = subprocess.run([hb, "-c", "need img; img save"], capture_output=True, text=True, env=MODENV, timeout=30)
+if q.returncode == 2:
+    r_ = subprocess.run([hb, "-c", "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\nbx_setcover '%s' '%s/tiny.jpg'; echo \"st=$?\"" % (load("console", RETRO), DESK, ROOT, ROOT, gb, D)],
+                        capture_output=True, text=True, env=MODENV, timeout=60)
+    out, err = r_.stdout, r_.stderr
+    check("a JPEG is saved as a PNG and becomes the cover where hibr has img save", "st=0" in out and lit(gb + "/.cover.png"), (out, err))
+
 shutil.rmtree(D + "/cache", True)
 hits.clear()
 src = os.path.join(D, "artsrc", "Dungeon Keeper")
