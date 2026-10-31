@@ -12,7 +12,7 @@ retro size $id 80 25 pixels                    # the cells it fills
 retro aspect $id 4:3                           # DOS pixels are not square
 retro frame $id && retro draw $id 1 1          # a new frame? draw it
 retro key $id left; retro mouse $id 10 20 1    # input
-retro info $id                                 # core, version, width, height, fps, rate, frames, paused, ended, output, mode, drawn, error
+retro info $id                                 # core, version, width, height, fps, rate, frames, paused, ended, output, mode, drawn, pointer, motion, error
 retro close $id
 ```
 
@@ -20,10 +20,10 @@ retro close $id
 |---|---|
 | `open CORE [GAME] [-s SYSDIR] [-S SAVEDIR] [-o key=value]...` | load a core by path or by name (`HIBR_RETRO_CORES`, `$XDG_DATA_HOME/hibr/retro/cores`, `/usr/local/lib/hibr/cores`, `/usr/lib/hibr/cores`; `NAME_libretro.so` or `NAME.so`); gives the player's number |
 | `list`, `close ID\|all` | |
-| `fd ID`, `wake ID` | a descriptor readable when a new frame is there, for `console watch`; empty it |
+| `fd ID`, `wake ID` | a descriptor readable when a new frame is there, or when the core has ended (`info`'s `ended` is 1), for `console watch`; empty it |
 | `frame ID` | status 0 when a frame has been made since the last draw |
 | `size ID COLS ROWS [pixels\|half]`, `aspect ID 4:3\|auto\|RATIO` | the cells it fills, and the shape of the picture in them |
-| `draw ID ROW COL [-p PANE]` | the latest frame, its shape kept, in the rectangle |
+| `draw ID ROW COL [-p PANE]` | the latest frame, its shape kept, in the rectangle. With `-p` the picture is placed through that pane, so a window over it covers it instead of blanking it, and a pane that moves takes it along (hibr #382, #405) |
 | `key ID NAME [down\|up\|tap]` | a key by the console's name. `tap`, the default, holds it for `hold` ms after each report, since a terminal sends no key release (hibr #315) |
 | `hold ID MS`, `mouse ID ROW COL BUTTONS [WHEEL]`, `motion ID DX DY BUTTONS [WHEEL]`, `pad ID MASK` | the hold time; the pointer at a cell over the picture (a whole number is the middle of the cell, `12.25` a quarter across it, which is how a pointer reported in pixels is passed), counted as `draw` counts them (in the pane when it was given `-p`, else on the screen), buttons 1 left 2 right 4 middle; `motion` is a locked pointer's raw counts, handed to the core as the mouse's own with no position, and `info` shows their running total as `motion`; the joypad |
 | `pause`, `play`, `toggle`, `reset ID`, `option ID KEY VALUE`, `save ID FILE`, `load ID FILE` | |
@@ -62,7 +62,7 @@ Sound goes to PipeWire/Pulse/ALSA/AudioQueue as in hibr's `media`; `HIBR_RETRO_A
 
 ## Real cores
 
-`cores/build.sh WORKDIR OUTDIR` builds DOSBox Pure from the revision in `cores/PINS`; it loads and runs through `retro open` at 70 fps. ScummVM also ran (it reopens fine and drew a game) but was dropped for its size, see ADR 0002. `build/rl_shot` (`tests/rl_shot.c`) writes a core's latest frame as PPM.
+`make core` (that is, `cores/build.sh WORKDIR OUTDIR`) builds DOSBox Pure from the tag and commit in `cores/PINS`, refusing any other, and leaves `dosbox_pure_libretro.so.build` and the source tarball beside it; it loads and runs through `retro open` at 70 fps. ScummVM also ran (it reopens fine and drew a game) but was dropped for its size, see ADR 0002. `build/rl_shot` (`tests/rl_shot.c`) writes a core's latest frame as PPM.
 
 Checked on the real cores: DOSBox Pure saves and loads a state while a DOS program runs (152 kB), and says so when none runs.
 

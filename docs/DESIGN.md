@@ -2,6 +2,38 @@
 
 > **Superseded in part by [ADR 0002](adr/0002-dos-only.md): ScummVM is dropped and the project is DOS-only, named hibr-boxer.** The text below was written for both engines; wherever it says ScummVM, read it as history. The gamebox keeps an `engine` field so a second core can return as an additive package.
 
+## Where it stands (2026-10-31)
+
+This document was written as a sketch on 2026-10-20, before anything existed. What follows is how it
+turned out; where it and the sketch below disagree, **this section wins**. [CHANGELOG.md](../CHANGELOG.md)
+has it version by version and the [README](../README.md) is the manual.
+
+- **Route B was built.** `mods/retro` is a libretro frontend module (`retro`, shipped as the
+  `hibr-retro` deb), DOSBox Pure is the emulator, built from pinned source by `cores/build.sh`
+  (`make core`) and never changed. ScummVM was dropped ([ADR 0002](adr/0002-dos-only.md)); the
+  project is DOS only and is called hibr-boxer.
+- **The Shelf is gone.** From Boxer 1.0 the **Boxer** window (`apps/Games/boxer.hibr`) imports
+  (drop, or Import), a game is a `NAME.boxer` folder with a `boxer.json` (not `gamebox.json`), Files
+  shows it with its cover and plays it on a double click (`apps/boxerplay.hibr`), and the right-click
+  menu has Get Info, Fetch Cover and Game Is Already Installed. Sections 1, 4, 5 and 8 below describe
+  the sketch.
+- **The hibr prerequisites all shipped**, as tickets filed from here: the opener and bundle verbs
+  (#318), covers as a bundle's icon (#336, hibr 0.99.281), hover with the pointer's pixel (#370,
+  0.99.304), pointer hiding (#373, 0.99.311), **pointer lock** (#379, hibr 0.99.365 with Blit 0.2.42,
+  blit#139), **true full screen** (#405, hibr 0.99.380; the stale picture on another display fixed in
+  0.99.392). Still not possible in a terminal: key release (#315; keys are press and a held-for-a-moment
+  tap), so a game that reads the keyboard's release does not.
+- **The mouse** is relative by default with the pointer locked where the terminal can hold it (section 6).
+- **Speed.** DOS games never sleep, so an emulator left to run flat out spends a core on their waiting
+  loops. A Speed Limit by era (Pentium 100 by default) caps it; Boxer's own drawing costs 6 to 13% of a
+  core at 70 frames a second (measured on an i3-N300). See the README.
+- **Box art** is matched against the libretro thumbnails list with rules that prefer no cover to a wrong
+  one, and falls back to a title screen; fetching is a background job and is off until switched on.
+- **Not done:** Homebrew and AUR packages (only the deb exists); another emulator (DOSBox-X for
+  Windows 9x or PC-98 would be a second core, and an ADR); save states and rewind; a real game on
+  every machine we claim (the suite runs a test game and a stand-in terminal; the owner has tried it
+  by hand on Blit, one and two displays).
+
 Status: sketch, 2026-10-20. Written against hibr 0.99.268 (module ABI 16).
 Every claim about hibr below was read from its tree (`docs/display.md`,
 `docs/modules.md`, `docs/catalogue.md`, ADRs 0037, 0041, 0044, 0046, 0047,
@@ -37,14 +69,16 @@ Boxer-style shelf of games, packaged properly.
 
 ```
 hibr-retro-gaming/
-  apps/Games/shelf.hibr          the Shelf application            -> hibr-apps
-  control-panel/shelfset.hibr    its pane, a # part: of the app   -> hibr-apps
-  lib/                           gamebox, import and detect code the app sources
-  mods/retro/                    route B only: libretro frontend as a hibr module
-  packaging/{deb,aur,homebrew}/  OS packages (route B), emulator dependency notes
-  tests/                         pty suites on hibr's harness, a stub emulator
-  docs/
+  apps/Games/boxer.hibr          the Boxer window (import, Get Info, Fetch Cover) -> hibr-apps
+  apps/boxerplay.hibr            the game window, a # part: of boxer              -> hibr-apps
+  control-panel/boxerset.hibr    the Control Panel pane, a # part: of boxer       -> hibr-apps
+  mods/retro/                    the libretro frontend as a hibr module (the deb)
+  cores/                         PINS and build.sh: DOSBox Pure from pinned source
+  packaging/deb/                 the hibr-retro package
+  tests/                         pty suites on hibr's harness, a test core
+  docs/  README.md  CHANGELOG.md
 ```
+(The sketch's layout, with a Shelf and a `lib/`, is superseded: see "Where it stands".)
 
 Two kinds of thing, two homes, as ADR 0041/0044 draw the line:
 
@@ -239,6 +273,9 @@ app itself before we promise to match them.
 
 ## 4. The Shelf (the application)
 
+> **Superseded.** The Shelf was dropped for the Boxer window and Files (see "Where it stands"). Kept as the
+> design it was.
+
 A hibr desktop app: a script with `app shelf "…" 1.0`, `# modules:` and
 `# part:` lines (see `apps/xscreen.hibr` for the shape).
 
@@ -358,6 +395,11 @@ in half blocks and kitty, and watch sixel at large sizes. Measure early.
 
 ## 7. Packaging and distribution
 
+> **Superseded in part.** Route B was chosen, so the `hibr-retro` deb exists (built by
+> `packaging/deb/build-deb.sh`, published to the hibr apt repo, with the pinned DOSBox Pure source kept
+> beside it for the GPL); the apps go to hibr-apps with `addapp`. Homebrew and the AUR do not exist yet.
+> The text below is the sketch.
+
 **Phase 1 (route A) needs no package of ours.**
 
 | artefact | how it reaches a user |
@@ -392,6 +434,9 @@ installed"). So the OS package must be installed before the app, and the app's
 
 ## 8. Phases
 
+> **Done through phase 5 for the deb and hibr-apps** (not Homebrew or the AUR); phase 6 is partly done
+> (per-game Get Info). The list is the sketch's.
+
 | | |
 |---|---|
 | **0** | this repo: README, design, ADR, licence (done) |
@@ -407,6 +452,10 @@ a shell-script **stub emulator** standing in for DOSBox and ScummVM, so import,
 detection and launch are tested without either installed.
 
 ## 9. Open questions
+
+> **Answered**: route B; cores built by us from pinned source; Linux first; the module is `retro`, the
+> application is Boxer and the folder `.boxer`; stock-compatible DOSBox Pure; the prerequisites in `itdlabs/hibr`
+> were done there; box art is the person's own or an opt-in lookup (off by default); the repo stays public.
 
 1. **Route.** B, decided 2026-10-20. Cores: **built by us from source** (decided 2026-10-20), not fetched
    from libretro's builds, so we control what runs and can build per OS. Both

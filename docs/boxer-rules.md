@@ -18,12 +18,13 @@ before the lists are shipped anywhere that cares.
 | Windows programs and no DOS program that is not a batch file: a Windows game, refused; nothing DOS at all and nothing saying installed: refused | `bx_import` |
 | not installed and has an installer: run the installer, the source mounted as D:; afterwards, if it put files on C: the source is kept as the game's disc, else the source's files are the game and are copied to C: | `bx_import` (installing), `bd_finish` |
 | installed (or no installer): copy the files into C:, in a folder named for the game (`validDOSNameFromName`: lower case, letters digits and dots, 8.3) when the files have programs at the top and nothing marking them installed, else into the root | `bx_copyin`, `bd_wantsfolder`, `bd_dosname` |
-| no default program is guessed: the program list is shown, the one run is remembered; a game with one program runs it | the shelf's chooser (`bx_play`), `bd_describe` |
+| no default program is guessed: the program list is shown, the one run is remembered; a game with one program runs it | the program list in the game window (`boxerplay`, a click or the arrow keys), `bd_describe` |
 
-Where it differs, because a terminal is not a Mac window: the installer's disc is a plain D:
-folder, not an emulated CD-ROM (DOSBox Pure refuses a folder as a CD-ROM); the "this game is
-already installed" button is *Game Is Already Installed* in the game's right-click menu; and
-the program list is a drop-down under the game's tile, not a panel in the game window.
+Where it differs, because a terminal is not a Mac window: an installer's disc that is a plain folder is
+mounted as a plain D: folder, because DOSBox Pure refuses a folder as a CD-ROM (when xorriso, 7z or
+bsdtar is here it is made into an image first, which is a CD-ROM: see below); the "this game is already
+installed" button is *Game Is Already Installed* in the game's right-click menu; and the program list is a
+list in the game window itself (click one, or the arrow keys and Enter), not a panel beside it.
 
 ## Games that need their disc
 

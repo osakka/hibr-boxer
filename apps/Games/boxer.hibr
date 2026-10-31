@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.23
+app boxer "DOS games, one folder to a game" 1.24
 # modules: img retro
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -147,14 +147,16 @@ fn bx_dosify(root) {
 # --- box art --------------------------------------------------------------------
 #
 # A box's cover is .cover.png in it (cover.png is read too): the person's own
-# when they put one there, else, when Control Panel > Boxer says to fetch
-# box art, the libretro thumbnails project's picture for the game's name
-# (https://thumbnails.libretro.com/DOS/Named_Boxarts/). Fetching sends the
-# game's name to that server, so it is off until it is turned on; a cover that
-# is already there is never replaced. What comes back is checked to be a
-# PNG of a sane size before it is kept (a real cover is tens of KB; 60 bytes is
-# only less than the smallest PNG there is). Fetching waits on the network, up
-# to half a minute a download, as an import waits on its copying.
+# when they put one there, else the libretro thumbnails project's picture for
+# the game's name (https://thumbnails.libretro.com/DOS/): its box art, or, for
+# a game with none, its title screen, which is at least never another game's
+# box. Fetching sends the game's name to that server, so it is off until it is
+# turned on in Control Panel > Boxer; choosing Fetch Cover for one game is the
+# person asking for it, and needs no second answer. A cover that is already
+# there is never replaced by an import. What comes back is checked to be a PNG
+# of a sane size before it is kept (a real cover is tens of KB; 60 bytes is
+# only less than the smallest PNG there is). Inside the desktop a fetch is a
+# job, one at a time, and says how it went in a note; from a shell it waits.
 
 declare -gA BCJ
 BX_ART="${BX_ART-off}"
@@ -175,25 +177,29 @@ fn bc_cache() {
 	ret "${XDG_CACHE_HOME:-$HOME/.cache}/hibr/boxer"
 }
 
-fn bc_url() {
-	ret "${BX_ART_URL:-https://thumbnails.libretro.com/DOS/Named_Boxarts/}"
+# Where a set of covers is fetched from: boxarts (the default) or titles.
+fn bc_url(set = boxarts) {
+	local u=${BX_ART_URL:-https://thumbnails.libretro.com/DOS/Named_Boxarts/}
+
+	[ "$set" = titles ] && u=${u/Named_Boxarts/Named_Titles}
+	ret "$u"
 }
 
-# The server's list of covers as a file of "name<TAB>encoded name" lines, made
-# when there is none or the one there is over a month old.
-fn bc_list() {
+# The server's list of covers in a set as a file of "name<TAB>encoded name"
+# lines, made when there is none or the one there is over a month old.
+fn bc_list(set = boxarts) {
 	local dir lst raw f n url
 
 	dir := bc_cache
-	url := bc_url
-	lst="$dir/dos-boxarts.lst"
+	url := bc_url "$set"
+	lst="$dir/dos-$set.lst"
 	if [ -s "$lst" ] && [ -z "$(find "$lst" -mtime +30 2> /dev/null)" ]; then
 		ret "$lst"
 		return 0
 	fi
 	mkdir -p "$dir" || return 1
 	raw="$lst.part"
-	bc_get "$url" "$raw" 4000000 || { command rm -f -- "$raw"; return 1; }
+	bc_get "$url" "$raw" 6000000 || { command rm -f -- "$raw"; return 1; }
 	grep -o 'href="[^"]*\.png"' "$raw" | sed -e 's/^href="//' -e 's/"$//' -e 's/&amp;/\&/g' > "$raw.enc"
 	[ -s "$raw.enc" ] || { command rm -f -- "$raw" "$raw.enc"; return 1; }
 	: > "$raw.dec"
@@ -216,62 +222,219 @@ fn bc_get(url, out, int max) {
 	curl -fsSL --proto "$pr" --proto-redir "$pr" --max-time 30 --max-filesize "$max" -o "$out" -- "$url" 2> /dev/null
 }
 
-# Which of the listed covers is the game's: the names are compared lower case,
-# without the (year), the punctuation, or a ", The" at the end. The same name
-# wins; failing that, for a game whose name ends in a number ("Larry 2"), the
-# shortest name that starts with it, which is the one with its subtitle. A
-# series name alone is not guessed at, a wrong cover being worse than none.
-# Gives the encoded file name, or nothing.
+# Which of the listed covers is the game's. Both names are made alike first:
+# lower case, without the (year) or [tags], the apostrophes, the leading or
+# trailing "the", "&" as "and", the punctuation, a number split from the letters
+# before it ("keen1") and a Roman numeral as a number. Then, best first: the
+# same name; the same but for spaces (Sim City, SimCity); for a game whose name
+# ends in a number ("Larry 2"), a name that starts with it, which is the one
+# with its subtitle, or has it inside ("Leisure Suit Larry 2: ..."); the name
+# with a format suffix (sci, vga, cd); and one slip of a letter in a long
+# name, never in a number or the last letter, which is the difference between
+# a game and its sequel or its plural. A few short names DOS folders have (PRINCE,
+# LSL2, KQ5, WOLF3D) are spelled out first. A demo is the last choice, a (year)
+# a little better. A series name alone is not guessed at, nor a sequel taken
+# for its first game: a wrong cover is worse than none. Gives the encoded file
+# name, or nothing.
 fn bc_match(title, lst) {
 	local r
 
-	r=$(awk -F '\t' -v t="$title" '
-	function norm(s,   x) {
-		x = tolower(s)
-		sub(/\.png$/, "", x)
-		gsub(/\([^)]*\)/, " ", x)
-		gsub(/\[[^]]*\]/, " ", x)
-		gsub(/[ \t]+$/, "", x)
-		if (match(x, /, (the|a|an)$/)) x = substr(x, RSTART + 2) " " substr(x, 1, RSTART - 1)
-		gsub(/[^a-z0-9]+/, " ", x)
-		gsub(/^ +| +$/, "", x)
-		return x
+	r=$(awk -F '\t' -v title="$title" '
+function squash(s) { gsub(/ /, "", s); return s }
+function words(s,   n, i, a, c, p, o, w) {
+	o = ""; p = ""
+	for (i = 1; i <= length(s); i++) {
+		c = substr(s, i, 1)
+		if (p ~ /[a-z]/ && c ~ /[0-9]/) o = o " "
+		o = o c; p = c
 	}
-	BEGIN { q = norm(t); best = ""; bs = 1e9; numbered = (q ~ / ([0-9]+|[ivx]+)$/) }
-	q == "" || length(q) < 3 { next }
-	{
-		n = norm($1)
-		if (n == q) s = 0
-		else if (numbered && index(n, q " ") == 1) s = 1 + length(n)
-		else next
-		if ($1 ~ /\(1[0-9][0-9][0-9]\)|\(20[0-9][0-9]\)/) s -= 0.5
-		if (s < bs) { bs = s; best = $2 }
+	n = split(o, a, " ")
+	o = ""
+	for (i = 1; i <= n; i++) {
+		w = a[i]
+		if (i > 1) {
+			if (w == "ii") w = "2"; else if (w == "iii") w = "3"; else if (w == "iv") w = "4"
+			else if (w == "vi") w = "6"; else if (w == "vii") w = "7"; else if (w == "viii") w = "8"; else if (w == "ix") w = "9"
+			else if (w == "v" && (i == n || a[i - 1] !~ /^(of|the|a|an|and|in|for|to)$/)) w = "5"
+			else if (w == "i" && a[i - 1] !~ /^(of|the|a|an|and|in|for|to|that|what|when|where|how|why|if|as|so|am|do|did|can|will|but|or)$/) w = "1"
+		}
+		o = o (o == "" ? "" : " ") w
 	}
-	END { if (best != "") print best }' "$lst")
+	return o
+}
+function norm(s,   x) {
+	x = tolower(s)
+	sub(/\.png$/, "", x)
+	gsub(/\([^)]*\)/, " ", x)
+	gsub(/\[[^]]*\]/, " ", x)
+	gsub(sq, "", x)
+	gsub(/[`"]/, "", x)
+	gsub(/[ \t]+$/, "", x)
+	if (match(x, /, (the|a|an)$/)) x = substr(x, RSTART + 2) " " substr(x, 1, RSTART - 1)
+	gsub(/&/, " and ", x)
+	gsub(/[^a-z0-9]+/, " ", x)
+	gsub(/^ +| +$/, "", x)
+	x = words(x)
+	if (x ~ /^(the|a|an) /) sub(/^(the|a|an) /, "", x)
+	return x
+}
+function lev1(a, b,   la, lb, i, k, tmp, ch) {
+	la = length(a); lb = length(b)
+	if (la - lb > 1 || lb - la > 1) return 0
+	if (la == lb) {
+		k = 0
+		for (i = 1; i <= la; i++) if (substr(a, i, 1) != substr(b, i, 1)) { k++; ch = substr(a, i, 1) substr(b, i, 1); if (ch ~ /[0-9]/ || k > 1 || i == la) return 0 }
+		return k == 1
+	}
+	if (la < lb) { tmp = a; a = b; b = tmp; la = length(a); lb = length(b) }
+	for (i = 1; i <= lb; i++) if (substr(a, i, 1) != substr(b, i, 1)) break
+	if (substr(a, i, 1) ~ /[0-9]/ || i >= la) return 0
+	return substr(a, i + 1) == substr(b, i)
+}
+function alias(q,   d) {
+	d = substr(q, length(q), 1)
+	if (q ~ /^(prince|pop|pop1)$/) return "prince of persia"
+	if (q ~ /^pop ?2$/) return "prince of persia 2"
+	if (q ~ /^wolf ?3d$/) return "wolfenstein 3d"
+	if (q ~ /^doom ?2$/) return "doom 2"
+	if (q ~ /^dott$/) return "day of the tentacle"
+	if (q ~ /^sam ?(and|n)? ?max$/) return "sam and max hit the road"
+	if (q ~ /^mi ?1$/) return "secret of monkey island"
+	if (q ~ /^mi ?2$/) return "monkey island 2"
+	if (q ~ /^lsl ?[0-9]$/) return "leisure suit larry " d
+	if (q ~ /^kq ?[0-9]$/) return "kings quest " d
+	if (q ~ /^sq ?[0-9]$/) return "space quest " d
+	if (q ~ /^pq ?[0-9]$/) return "police quest " d
+	if (q ~ /^sc ?2000$/ || q ~ /^sc2k$/) return "simcity 2000"
+	if (q ~ /^civ$/) return "civilization"
+	if (q ~ /^civ ?[0-9]$/) return "civilization " d
+	if (q ~ /^xcom$/) return "x com ufo defense"
+	if (q ~ /^cnc$/) return "command and conquer"
+	if (q ~ /^war ?2$/) return "warcraft 2"
+	if (q ~ /^mom$/) return "master of magic"
+	if (q ~ /^moo$/) return "master of orion"
+	if (q ~ /^moo ?2$/) return "master of orion 2"
+	return q
+}
+function nwords(s,   a) { return split(s, a, " ") }
+function score(q, qs, qn, numbered, n, ns,   tail) {
+	if (n == q) return 0
+	if (ns == qs) return 0.2
+	if (numbered && index(n, q " ") == 1) return 1 + length(n) / 100
+	tail = substr(q, length(n) + 2)
+	if (qn >= 3 && nwords(n) >= 2 && index(q, n " ") == 1 && tail ~ /^(sci|vga|ega|cga|cd|dos|english|en)$/) return 2 + length(q) / 100
+	if (numbered && qn >= 2 && index(" " n " ", " " q " ") > 0) return 3 + length(n) / 100
+	if (length(qs) >= 10 && qn == nwords(n) && substr(qs, 1, 3) == substr(ns, 1, 3) && lev1(qs, ns)) return 4
+	return -1
+}
+BEGIN {
+	sq = sprintf("%c", 39)
+	q = alias(norm(title)); qs = squash(q); best = ""; bs = 1e9
+	qn = nwords(q); numbered = (q ~ / [0-9]+$/)
+}
+q == "" || length(qs) < 3 { next }
+{
+	n = norm($1); ns = squash(n)
+	s = score(q, qs, qn, numbered, n, ns)
+	if (s < 0) next
+	if (tolower($1) ~ /\((demo|beta|proto|prototype|sample|alpha|preview)/) s += 3
+	if ($1 ~ /\(1[0-9][0-9][0-9]\)|\(20[0-9][0-9]\)/) s -= 0.5
+	if (s < bs) { bs = s; best = $2 }
+}
+END { if (best != "") print best }
+' "$lst")
 	ret "$r"
 }
 
-# Fetch a box's cover into it as .cover.png, whatever BX_ART says. Status 1
-# when there is none to be had, 2 when one came back that was not a PNG.
-fn bc_fetch(box) {
-	local lst title enc tmp magic url
+# Fetch a box's cover into it as .cover.png, whatever BX_ART says: its box art,
+# else its title screen (or only the one set, named as the second argument).
+# Status 1 when there is none to be had, 2 when what came back was not a PNG.
+fn bc_fetch(box, only = "") {
+	local lst title enc tmp magic url set got=1
 
 	bm_up "$box"
-	lst := bc_list || return 1
-	url := bc_url
+	[ -r "$box/boxer.json" ] || return 1
 	json parse BCJ "$(< "$box/boxer.json")" 2> /dev/null || return 1
 	title := bp_get BCJ .title "${box##*/}"
 	title=${title%.boxer}
-	enc := bc_match "$title" "$lst"
-	[ -n "$enc" ] || return 1
-	tmp="$box/.cover.png.part"
-	bc_get "$url$enc" "$tmp" 8000000 || { command rm -f -- "$tmp"; return 1; }
-	magic=$(head -c 8 "$tmp" | od -An -tx1 | tr -d ' \n')
-	if [ "$magic" != 89504e470d0a1a0a ] || [ "$(stat -c %s "$tmp")" -lt 60 ]; then
-		command rm -f -- "$tmp"
-		return 2
+	title=${title%.gamebox}
+	for set in boxarts titles; do
+		[ -n "$only" ] && [ "$only" != "$set" ] && continue
+		lst := bc_list "$set" || continue
+		enc := bc_match "$title" "$lst"
+		[ -n "$enc" ] || continue
+		url := bc_url "$set"
+		tmp="$box/.cover.png.part"
+		bc_get "$url$enc" "$tmp" 8000000 || { command rm -f -- "$tmp"; continue; }
+		magic=$(head -c 8 "$tmp" | od -An -tx1 | tr -d ' \n')
+		if [ "$magic" != 89504e470d0a1a0a ] || [ "$(stat -c %s "$tmp")" -lt 60 ]; then
+			command rm -f -- "$tmp"
+			got=2
+			continue
+		fi
+		command mv -f -- "$tmp" "$box/.cover.png"
+		bc_kind_set "$box" "$([ "$set" = titles ] && echo title || echo box)"
+		return 0
+	done
+	return $got
+}
+
+# What a box's cover is: box (the box art), title (a title screen), own (the
+# person's), or nothing when it came with the game.
+fn bc_kind(box) {
+	local k
+
+	json parse BCJ "$(< "$box/boxer.json")" 2> /dev/null || return 1
+	k := bp_get BCJ .cover.kind ""
+	ret "$k"
+}
+
+fn bc_kind_set(box, kind) {
+	json parse BCJ "$(< "$box/boxer.json")" 2> /dev/null || return 0
+	json set BCJ .cover.kind "$kind" -s
+	json emit BCJ -p > "$box/boxer.json"
+	return 0
+}
+
+# The boxes waiting for a cover to be fetched in the background, one at a time
+# so that two do not both fetch the list of names.
+BCQ=()
+
+# Fetch a box's cover without holding the desktop up: a job, said in a note
+# when it is done. Where there is no desktop it is done here and now.
+fn bc_later(box) {
+	if ! dt_has dt_job; then
+		bc_fetch "$box"
+		return 0
 	fi
-	command mv -f -- "$tmp" "$box/.cover.png"
+	BCQ+=("$box")
+	bc_next
+	return 0
+}
+
+fn bc_next() {
+	local box n
+
+	[ "${#BCQ[@]}" -gt 0 ] || return 0
+	dt_jobrunning cover > /dev/null 2>&1 && return 0
+	box=${BCQ[0]}
+	BCQ=("${BCQ[@]:1}")
+	n := dt_job cover "$box" bc_done bc_fetch "$box"
+	return 0
+}
+
+# A background fetch ended: say how it went, and start the next.
+fn bc_done(int n, int st) {
+	local box=${DTJ[$n]["tag"]} name
+
+	name=${box##*/}
+	name=${name%.*}
+	case $st in
+	0) dt_notep low "Cover found for $name" ;;
+	2) dt_notep low "What came back for $name was not a picture, so it was not kept" ;;
+	*) dt_notep low "No cover found for $name" ;;
+	esac
+	bc_next
 	return 0
 }
 
@@ -282,7 +445,9 @@ fn bc_set(box, pic) {
 	[ -r "$pic" ] || { echo "boxer: no such file: $pic" >&2; return 1; }
 	magic=$(head -c 8 "$pic" | od -An -tx1 | tr -d ' \n')
 	[ "$magic" = 89504e470d0a1a0a ] || { echo "boxer: a cover must be a PNG: $pic" >&2; return 1; }
-	command cp -f -- "$pic" "$box/.cover.png"
+	command cp -f -- "$pic" "$box/.cover.png" || return 1
+	bc_kind_set "$box" own
+	return 0
 }
 
 # After an import: a cover the game came with or sat beside, else, when it is
@@ -299,7 +464,7 @@ fn bc_auto(box, src) {
 	for f in "$d/.cover.png" "$d/cover.png" "$d/$n.png" "$src/cover.png"; do
 		[ -f "$f" ] && bc_set "$box" "$f" 2> /dev/null && return 0
 	done
-	[ "$BX_ART" = on ] && bc_fetch "$box"
+	[ "$BX_ART" = on ] && bc_later "$box"
 	return 0
 }
 
@@ -817,7 +982,8 @@ fn boxer_close(int id) {
 }
 
 # --- Fetch Cover and Game Is Already Installed, from a game's right-click menu in
-# Files: each a small window that asks first and says what happened.
+# Files: each a small window. Fetch Cover looks at once and says what it found;
+# Game Is Already Installed asks first, since it lets go of the disc.
 
 fn bx_askopen(int id, box) {
 	local t
@@ -849,31 +1015,35 @@ fn bx_askdraw(int id, int h, int w, ...lines) {
 }
 
 fn boxercover_open(int id, arg = "") {
+	local n
+
 	bx_askopen "$id" "$arg"
+	BX[$id]["busy"]=1
+	if dt_has dt_job; then
+		n := dt_job boxercover "$id" bx_coverdone bc_fetch "$arg"
+		BX[$id]["job"]=$n
+		return 0
+	fi
+	bc_fetch "$arg"
+	bx_coverreport "$id" $?
+	return 0
 }
 
 fn boxercover_draw(int id, int h, int w, int row, int col) {
 	local n=${BX[$id]["name"]}
 
-	if [ -n "${BX[$id]["said"]}" ]; then
-		bx_askdraw "$id" "$h" "$w" "${BX[$id]["said"]}"
-		dt_dlgbtns "$id" "$h" "$w" ok ok OK
+	if [ "${BX[$id]["busy"]-}" = 1 ]; then
+		bx_askdraw "$id" "$h" "$w" "Looking for the cover of $n..." "" \
+			"The game's name goes to thumbnails.libretro.com."
 		return 0
 	fi
-	bx_askdraw "$id" "$h" "$w" "Fetch the box art for $n from the internet?" "" \
-		"This sends the game's name to thumbnails.libretro.com."
-	dt_dlgbtns "$id" "$h" "$w" "${BX[$id]["focus"]}" ok Fetch cancel Cancel
+	bx_askdraw "$id" "$h" "$w" "${BX[$id]["said"]}"
+	dt_dlgbtns "$id" "$h" "$w" ok ok OK
 }
 
-fn bx_coverdo(int id) {
-	local st
-
-	if [ -n "${BX[$id]["said"]}" ]; then
-		dt_del "$id"
-		return 0
-	fi
-	bc_fetch "${BX[$id]["ibox"]}"
-	st=$?
+# What came of looking for a cover, in the window.
+fn bx_coverreport(int id, int st) {
+	BX[$id]["busy"]=0
 	case $st in
 	0) BX[$id]["said"]="Found a cover for ${BX[$id]["name"]}." ;;
 	2) BX[$id]["said"]="What came back was not a PNG, so it was not kept." ;;
@@ -882,17 +1052,23 @@ fn bx_coverdo(int id) {
 	return 0
 }
 
-fn boxercover_key(int id, key) {
-	local f=${BX[$id]["focus"]} d
-	local -a o=(ok cancel)
+# The job for a Fetch Cover window ended: a found cover is shown in Files and
+# the window goes by itself; a miss stays up to say so.
+fn bx_coverdone(int n, int st) {
+	local id=${DTJ[$n]["tag"]}
 
-	if d := dt_focuskey "$key" 1; then
-		BX[$id]["focus"] := dt_focus "$f" "$d" "${o[@]}"
-		return 0
+	[ -n "${BX[$id]["ibox"]+x}" ] || return 0
+	bx_coverreport "$id" "$st"
+	if [ "$st" = 0 ]; then
+		dt_notep low "Cover found for ${BX[$id]["name"]}"
+		dt_wantclose "$id"
 	fi
+	return 0
+}
+
+fn boxercover_key(int id, key) {
 	case $key in
-	escape) dt_del "$id" ;;
-	enter) if [ "$f" = cancel ]; then dt_del "$id"; else bx_coverdo "$id"; fi ;;
+	escape | enter | " ") dt_del "$id" ;;
 	esac
 	return 0
 }
@@ -901,7 +1077,7 @@ fn boxercover_click(int id, int r, int c, btn = "") {
 	local tag
 
 	tag := dt_hit "$id" "$r" "$c" || return 0
-	case $tag in ok) bx_coverdo "$id" ;; cancel) dt_del "$id" ;; esac
+	[ "$tag" = ok ] && dt_del "$id"
 	return 0
 }
 
@@ -1059,7 +1235,7 @@ fn boxerinfo_open(int id, arg = "") {
 # Give the game the name typed, in its boxer.json and as its folder, which
 # are kept the same. A name another game has is refused.
 fn bx_rename(int id) {
-	local box=${BX[$id]["ibox"]-} new=${BX[$id]["ntext"]-} dest
+	local box=${BX[$id]["ibox"]-} new=${BX[$id]["ntext"]-} dest have
 
 	new=${new//[$'\t\n']/ }
 	new=${new#"${new%%[! ]*}"}
@@ -1087,6 +1263,11 @@ fn bx_rename(int id) {
 	BX[$id]["ncur"]=${#new}
 	BX[$id]["nfocus"]=0
 	dt_retitle "$id" "$new Settings"
+	# A game that has no cover, named properly at last, is looked for by its new name when fetching is on.
+	if [ "$BX_ART" = on ]; then
+		have := bc_path "${BX[$id]["ibox"]}" || have=
+		[ -n "$have" ] || bc_later "${BX[$id]["ibox"]}"
+	fi
 	return 0
 }
 
@@ -1184,7 +1365,14 @@ if [ -z "${DT_ROWS-}" ]; then
 		;;
 	covers)
 		for b in "$BX_SHELF"/*.boxer; do
-			[ -d "$b" ] && [ -z "$(bc_path "$b")" ] && bc_fetch "$b" && echo "$b"
+			[ -d "$b" ] || continue
+			have := bc_path "$b" || have=
+			if [ -z "$have" ]; then
+				bc_fetch "$b" && echo "$b"
+				continue
+			fi
+			k := bc_kind "$b" || k=
+			[ "$k" = title ] && bc_fetch "$b" boxarts && echo "$b"
 		done
 		;;
 	fix)

@@ -858,14 +858,6 @@ check("a .boxer folder is a bundle for Boxer, and has Get Info... as a verb that
 out, err = imp("mkdir -p %s/bun/V.boxer; dt_openverbs %s/bun/V.boxer; for i in \"${DT_OVLIST[@]}\"; do echo \"verb=${DT_OPENVERBS[$i][label]}\"; done" % (D, D))
 check("a .boxer folder is offered Get Info, Fetch Cover and Game Is Already Installed",
       all(w in out for w in ("verb=Get Info...", "verb=Fetch Cover...", "verb=Game Is Already Installed...")), out + err)
-t = appdesk("boxercover", os.path.join(shelf, "Beta Racer.boxer"))
-t.collect(1.0)
-check("Fetch Cover asks first, and says the game's name goes to the server",
-      "Fetch the box art for Beta Racer" in t.screen().text() and "thumbnails.libretro.com" in t.screen().text(), t.screen())
-t.send(b"\x1b")
-t.collect(0.6)
-check("and Escape lets it go without fetching", "Fetch the box art" not in t.screen().text() and not os.path.exists(os.path.join(shelf, "Beta Racer.boxer", ".cover.png")), t.screen())
-t.close()
 t = appdesk("boxerdone", os.path.join(shelf, "Beta Racer.boxer"))
 t.collect(1.0)
 check("Game Is Already Installed says so when the game is not waiting for an install", "not waiting to be installed" in t.screen().text(), t.screen())
@@ -943,12 +935,17 @@ t.close()
 # Control Panel > Boxer says so, one is fetched by the game's name from a server of covers (here a local one standing in).
 import http.server, threading
 art = os.path.join(D, "art")
-os.makedirs(art)
-png(art + "/Dungeon Keeper (1997).png", 8, 8, (200, 30, 30))
-png(art + "/Leisure Suit Larry 2 - Goes looking for Love in Several Wrong Places (1988).png", 8, 8, (30, 200, 30))
-png(art + "/7th Guest, The (1993).png", 8, 8, (30, 30, 200))
-png(art + "/Prince of Persia (1990).png", 8, 8, (90, 90, 90))
-open(art + "/Broken Game (1990).png", "wb").write(b"<html>not a png at all" * 20)
+os.makedirs(art + "/Named_Boxarts")
+os.makedirs(art + "/Named_Titles")
+png(art + "/Named_Boxarts/Dungeon Keeper (1997).png", 8, 8, (200, 30, 30))
+png(art + "/Named_Boxarts/Leisure Suit Larry 2 - Goes looking for Love in Several Wrong Places (1988).png", 8, 8, (30, 200, 30))
+png(art + "/Named_Boxarts/7th Guest, The (1993).png", 8, 8, (30, 30, 200))
+png(art + "/Named_Boxarts/Prince of Persia (1990).png", 8, 8, (90, 90, 90))
+png(art + "/Named_Boxarts/King's Quest.png", 8, 8, (120, 60, 60))
+png(art + "/Named_Boxarts/Commander Keen 1 - Marooned on Mars.png", 8, 8, (60, 120, 60))
+png(art + "/Named_Titles/Flash Back.png", 8, 8, (10, 200, 200))
+png(art + "/Named_Titles/Dungeon Keeper.png", 8, 8, (250, 250, 250))
+open(art + "/Named_Boxarts/Broken Game (1990).png", "wb").write(b"<html>not a png at all" * 20)
 hits = []
 
 
@@ -962,7 +959,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
 srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
-url = "http://127.0.0.1:%d/" % srv.server_address[1]
+url = "http://127.0.0.1:%d/Named_Boxarts/" % srv.server_address[1]
 ENVBASE["BX_ART_URL"] = url
 
 
@@ -984,6 +981,62 @@ check("a name that is nobody's is not matched, nor is a too-short one, nor 2 tak
       and m["Leisure Suit Larry"][0] == "1", m)
 check("what comes back that is not a PNG is refused and nothing is kept", m["Broken Game"] == ("2", None), m)
 
+# A game with no box art gets its title screen, and says which it is; a game with box art gets that.
+b = boxnamed("Flash Back")
+out, err = imp("bc_fetch '%s'; echo \"st=$?\"; k := bc_kind '%s'; echo \"kind=$k\"" % (b, b))
+check("a game with no box art gets its title screen, and the box says so", "st=0" in out and "kind=title" in out and lit(b + "/.cover.png"), (out, err))
+b = boxnamed("Dungeon Keeper")
+out, err = imp("bc_fetch '%s'; echo \"st=$?\"; k := bc_kind '%s'; echo \"kind=$k\"" % (b, b))
+check("and one with box art gets that, not the title screen", "st=0" in out and "kind=box" in out and lit(b + "/.cover.png")
+      and open(b + "/.cover.png", "rb").read() == open(art + "/Named_Boxarts/Dungeon Keeper (1997).png", "rb").read(), (out, err))
+
+# Which cover is whose: the matcher against names as the libretro list writes them (a colon is an underscore, "The" at the
+# end, the year, demos, apostrophes dropped), with what it must find and what it must leave alone.
+names = ["Prince of Persia (1990)", "Prince of Persia (Demo)", "Prince of Persia 2 - The Shadow and The Flame",
+         "Secret of Monkey Island, The (1990)", "Monkey Island 2_ LeChuck's Revenge", "Monkey Island 2_ LeChucks Revenge (Demo)",
+         "Sid Meier's Civilization (1991)", "X-COM - UFO Defense", "Leisure Suit Larry 2_ Goes looking for Love in Several Wrong Places",
+         "Commander Keen 1 - Marooned on Mars", "Wolfenstein 3D (1992)", "DOOM (1993)", "DOOM II (1994)", "Sam and Max Hit the Road",
+         "SimCity 2000", "Ultima V - Warriors of Destiny", "King's Quest", "King's Quest V_ Absence Makes the Heart Go Yonder",
+         "Paratrooper", "Last Half of Darkness", "Wheel of Fortune", "Test Drive (1987)", "Lemmings (1991)", "Space Quest I_ The Sarien Encounter",
+         "Mega Maze", "Soko-Ban", "Command and Conquer (1995)", "Warcraft II - Tides of Darkness"]
+open(D + "/match.lst", "w").write("".join("%s\t%s.png\n" % (n, n) for n in names))
+cases = [("Prince of Persia", "Prince of Persia (1990)"), ("PRINCE", "Prince of Persia (1990)"), ("The Secret of Monkey Island", "Secret of Monkey Island, The (1990)"),
+         ("Monkey Island 2", "Monkey Island 2_ LeChuck's Revenge"), ("Civilization II", None), ("Sid Meier's Civilization", "Sid Meier's Civilization (1991)"),
+         ("X-COM: UFO Defense", "X-COM - UFO Defense"), ("XCOM UFO Defense", "X-COM - UFO Defense"), ("Larry 2", "Leisure Suit Larry 2_ Goes looking for Love in Several Wrong Places"),
+         ("LSL2", "Leisure Suit Larry 2_ Goes looking for Love in Several Wrong Places"), ("KEEN1", "Commander Keen 1 - Marooned on Mars"),
+         ("Wolf3D", "Wolfenstein 3D (1992)"), ("Doom II", "DOOM II (1994)"), ("DOOM2", "DOOM II (1994)"), ("Sam & Max Hit the Road", "Sam and Max Hit the Road"),
+         ("Sim City 2000", "SimCity 2000"), ("Ultima 5", "Ultima V - Warriors of Destiny"), ("Kings Quest 5", "King's Quest V_ Absence Makes the Heart Go Yonder"),
+         ("KQ5", "King's Quest V_ Absence Makes the Heart Go Yonder"), ("King's Quest", "King's Quest"), ("Space Quest 1: The Sarien Encounter SCI", "Space Quest I_ The Sarien Encounter"),
+         ("MegaMaze", "Mega Maze"), ("Sokoban", "Soko-Ban"), ("Command & Conquer", "Command and Conquer (1995)"), ("Warcraft 2", "Warcraft II - Tides of Darkness"),
+         ("Lemmmings", None), ("Paratrooper II", None), ("Last Half of Darkness II", None), ("Wheel of Fortune: Junior Edition", None), ("Best Drive", None),
+         ("King's Quest VI", None), ("Prince of Persia 3", None), ("Doom", "DOOM (1993)")]
+script = "%s. %s\n. %s/apps/Games/boxer.hibr\n" % (load("console", RETRO), DESK, ROOT) + "".join(
+    "r := bc_match %s %s/match.lst; echo \"%d|$r\"\n" % ("'" + t.replace("'", "'\\''") + "'", D, i) for i, (t, _) in enumerate(cases))
+q = subprocess.run([hb, "-c", script], capture_output=True, text=True, env=dict(os.environ, **ENVBASE), timeout=90)
+got = {int(l.split("|", 1)[0]): l.split("|", 1)[1] for l in q.stdout.split("\n") if "|" in l}
+bad = [(cases[i][0], cases[i][1], (got.get(i, "?") or None)) for i in range(len(cases))
+       if (got.get(i, "?") or None) != ((cases[i][1] + ".png") if cases[i][1] else None)]
+check("the matcher finds the game's cover by sloppier names, and no other game's, in %d cases" % len(cases), not bad, (bad, q.stderr[-300:]))
+
+# Fetch Cover from a game's right-click menu looks at once: no question, a found cover closes the window by itself and
+# is in the box, a miss says so and waits for OK.
+wb = boxnamed("Prince of Persia")
+t = appdesk("boxercover", wb)
+t.collect(2.5)
+check("Fetch Cover looks at once and asks nothing: no Fetch or Cancel to press", "Fetch the box art" not in t.screen().text()
+      and "Cancel" not in t.screen().text(), t.screen())
+check("a found cover is in the box and the window has gone by itself", lit(wb + "/.cover.png") and "Looking for the cover" not in t.screen().text()
+      and "Found a cover" not in t.screen().text(), t.screen())
+t.close()
+wb = boxnamed("Nothing Like This")
+t = appdesk("boxercover", wb)
+t.collect(2.5)
+check("a game with no cover to be had says so and stays up for OK", "No cover found for" in t.screen().text() and "OK" in t.screen().text()
+      and not os.path.exists(wb + "/.cover.png"), t.screen())
+t.send(b"\r")
+t.collect(0.8)
+check("and Enter closes it", "No cover found for" not in t.screen().text(), t.screen())
+t.close()
 shutil.rmtree(D + "/cache", True)
 hits.clear()
 src = os.path.join(D, "artsrc", "Dungeon Keeper")

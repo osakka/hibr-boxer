@@ -1,9 +1,9 @@
 #!/usr/bin/env hibr
 #
 # boxerplay -- one DOS game from a gamebox, in a window of its own. The
-# window is opened by the shelf (Boxer, boxer.hibr) with a gamebox folder
-# for its argument; nothing here is meant to be started by hand, so the app
-# is hidden. The game runs in DOSBox Pure, a libretro core, driven by the
+# window is opened by Files (a double click on a NAME.boxer folder) or by
+# Boxer (boxer.hibr) with the folder for its argument; nothing here is meant
+# to be started by hand, so the app is hidden. The game runs in DOSBox Pure, a libretro core, driven by the
 # retro module on a thread of its own, and the frame it makes is drawn by
 # hibr's own renderer: pixels where the terminal takes them, half blocks
 # where it does not.
@@ -19,14 +19,19 @@
 # game's own saves are written to drives/c, as they would be on a real
 # disk; the core's save states go to saves/.
 #
-# What it cannot do yet: a key's release (the console reports presses only,
-# so a key is held for a short time after each press; hibr #315), and
-# the mouse's movement as distance, which a terminal cannot give.
+# The mouse is relative by default and, where the terminal can hold the
+# pointer still (hibr's pointer lock, #379), locked while captured, so the
+# game gets its motion as distance; elsewhere the pointer follows the cell
+# or pixel it is over. Alt+Enter asks the desktop for the whole display
+# (dt_fullscreen, #405), else makes the window as large as it can be.
+#
+# What a terminal cannot do: a key's release (the console reports presses
+# only, so a key is held for a short time after each press; hibr #315).
 
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.30
+app boxerplay "A DOS game from a gamebox" 0.31
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -284,7 +289,7 @@ fn bd_describe(box, name, state = "") {
 
 	bm_up "$box"
 	if [ -r "$box/boxer.json" ] && json parse BPJ "$(< "$box/boxer.json")" 2> /dev/null; then
-		for p in .title .display.render .display.aspect .cpu.cycles .cpu.limit .cpu.type .machine .voodoo .voodoospeed .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .capture .launch.args .source.imported; do
+		for p in .title .display.render .display.aspect .cpu.cycles .cpu.limit .cpu.type .cover.kind .machine .voodoo .voodoospeed .sound.card .sound.irq .sound.dma .sound.port .midi .mouse .capture .launch.args .source.imported; do
 			old := json get BPJ "$p" 2> /dev/null || old=
 			[ -n "$old" ] && keep[$p]=$old
 		done
