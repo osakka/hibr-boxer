@@ -1055,6 +1055,19 @@ if pos:
 check("a click on the picture marked keeps it", lit(wb + "/.cover.png") and "Find a cover for" not in t.screen().text(), (pos, t.screen()))
 t.close()
 
+# What another app (the browser's "Use as cover") calls: the games, and a picture made a game's cover.
+gb = boxnamed("Interface Game")
+out, err = imp("BX_SHELF=%s; bx_games" % D)
+check("bx_games lists the boxes in the games folder, one to a line", gb in out.split("\n"), (out, err))
+pngp = D + "/iface.png"
+png(pngp, 6, 6, (9, 99, 199))
+out, err = imp("bx_setcover '%s' '%s'; echo \"st=$?\"" % (gb, pngp))
+check("bx_setcover makes a PNG the game's cover", "st=0" in out and lit(gb + "/.cover.png") and open(gb + "/.cover.png", "rb").read() == open(pngp, "rb").read(), (out, err))
+os.remove(gb + "/.cover.png")
+open(D + "/iface.jpg", "wb").write(b"\xff\xd8\xff\xe0" + bytes(300))
+out, err = imp("bx_setcover '%s' '%s/iface.jpg'; echo \"st=$?\"" % (gb, D))
+check("and a picture that is not a PNG, with no way here to convert it, is refused and nothing is kept", "st=1" in out and not os.path.exists(gb + "/.cover.png"), (out, err))
+
 shutil.rmtree(D + "/cache", True)
 hits.clear()
 src = os.path.join(D, "artsrc", "Dungeon Keeper")

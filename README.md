@@ -128,7 +128,11 @@ one, `boxer.hibr covers` fills in the shelf (and swaps a title screen for box ar
   real 4,659-name list, every name finds itself and none finds another game's.
 - A download is kept only if it is a PNG of a sane size.
 - Only PNG covers are shown by Files, so a picture from the open web (mostly JPEG) cannot be used until
-  hibr can save one as PNG.
+  hibr can save one as PNG (`img save`, coming in hibr).
+- **For other apps** (the browser's "Use as cover for a game…"): with Boxer loaded, `bx_games` lists the
+  games in the games folder (one box path a line) and `bx_setcover BOX PICTURE` makes a picture a
+  game's cover: a PNG as it is, anything else saved as a PNG first by `img save` where hibr has it, else
+  refused (status 1). Check `dt_has bx_setcover` first.
 
 ## What it runs on
 

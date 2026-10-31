@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.26
+app boxer "DOS games, one folder to a game" 1.27
 # modules: img retro fetch
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -569,6 +569,34 @@ fn bc_set(box, pic) {
 	command cp -f -- "$pic" "$box/.cover.png" || return 1
 	bc_kind_set "$box" own
 	return 0
+}
+
+# For another app (the browser's "Use as cover"): the games in the games folder, one box path to a line.
+fn bx_games() {
+	local b
+
+	for b in "$BX_SHELF"/*.boxer "$BX_SHELF"/*.gamebox; do
+		[ -d "$b" ] && echo "$b"
+	done
+	return 0
+}
+
+# For another app: make a picture the cover of a game. A PNG is kept as it is; another kind (a JPEG from the
+# web) is saved as a PNG first where hibr can (`img save`), else it is refused. Status 0, or 1 when it was not used.
+fn bx_setcover(box, pic) {
+	local tmp st
+
+	[ -d "$box" ] && [ -r "$pic" ] || return 1
+	bm_up "$box"
+	if [ "$(head -c 8 "$pic" | od -An -tx1 | tr -d ' \n')" = 89504e470d0a1a0a ]; then
+		bc_set "$box" "$pic" 2> /dev/null
+		return $?
+	fi
+	tmp="$box/.cover.png.part"
+	img save "$pic" "$tmp" > /dev/null 2>&1 && bc_set "$box" "$tmp" 2> /dev/null
+	st=$?
+	command rm -f -- "$tmp"
+	return $st
 }
 
 # After an import: a cover the game came with or sat beside, else, when it is
