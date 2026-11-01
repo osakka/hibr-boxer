@@ -31,7 +31,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.34
+app boxerplay "A DOS game from a gamebox" 0.35
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -850,6 +850,7 @@ fn bp_ended(int id) {
 	# From inside a frame a window asks to be closed (dt_wantclose, hibr 0.99.38x): the desktop closes it once the frame is drawn.
 	# A delete here would pull the window out while the pass still holds it.
 	if [ "${st[ended]-0}" = 1 ]; then
+		bp_lock "$id" 0
 		if dt_has dt_wantclose; then dt_wantclose "$id"; else dt_del "$id"; fi
 	fi
 	return 0
@@ -881,9 +882,8 @@ bp_quityes() {
 # The desktop tells a window when full screen starts or ends, ended by it or not.
 fn boxerplay_fullscreen(int id, on) {
 	BP[$id]["fs"]=0
-	# A captured mouse stays captured across the change: the pointer is hidden again, and an unlock that comes right
-	# after it (a terminal letting go as the screen was redrawn) is answered by asking for the lock again.
-	BP[$id]["fstime"] := dt_ms
+	# A captured mouse stays captured across the change, the pointer hidden again. A lock the display drops with it is
+	# not asked for again: it comes back only with a click, never on its own.
 	if [ "${BP[$id]["cap"]-0}" = 1 ] && dt_has dt_pointer; then dt_pointer "$id" none; fi
 	if [ "$on" = on ]; then
 		BP[$id]["fs"]=1
@@ -1054,11 +1054,6 @@ fn bp_unlocked(int id) {
 		return 0
 	fi
 	bp_lockwhy "$id" "ended: the desktop gave the pointer back; released"
-	if [ "${BP[$id]["cap"]-0}" = 1 ] && [ -n "${BP[$id]["fstime"]-}" ] && [ $((now - ${BP[$id]["fstime"]})) -lt 1500 ]; then
-		BP[$id]["fstime"]=
-		bp_lockwhy "$id" "ended right after a full-screen change; asking for the lock again"
-		bp_lock "$id" 1 && return 0
-	fi
 	BP[$id]["cap"]=0
 	dt_has dt_pointer && dt_pointer "$id" ""
 	dt_notep low "Mouse released"
@@ -1222,6 +1217,7 @@ fn boxerplay_close(int id) {
 	# The core goes first: finishing an install can take a while, and a frame
 	# nobody reads in the meantime is a descriptor the desktop warns about.
 	[ -n "$fd" ] && command -v console > /dev/null && console unwatch "$fd"
+	[ "${BP[$id]["lock"]-0}" = 1 ] && dt_has dt_pointerlock && dt_pointerlock "$id" off
 	[ -n "${BP[$id]["p"]}" ] && retro close "${BP[$id]["p"]}" 2> /dev/null
 	[ -n "${BP[$id]["dir"]}" ] && command rm -rf -- "${BP[$id]["dir"]}"
 	st := bp_state_of "$box"

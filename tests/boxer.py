@@ -201,7 +201,7 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     check("a click after that takes the lock again, so the release really ended it", rd().count("pointer lock: asked") == 2, rd())
     t.close()
     # Going full screen with the mouse captured: the capture and the lock stay; and if the terminal lets go as the screen
-    # is redrawn (played here by the display's own release), the lock is asked for again and the capture is not dropped.
+    # is redrawn (played here by the display's own release), the lock is NOT asked for again on its own: only a click takes it.
     lj = json.load(open(lockbox + "/boxer.json"))
     lj.update({"title": "Lock Game", "capture": "click", "mouse": "relative"})
     json.dump(lj, open(lockbox + "/boxer.json", "w"))
@@ -215,10 +215,14 @@ if "ptrrelease" in open(HIBR_TREE + "/programs/desktop/wm/input.hibr").read():
     t.collect(0.5)
     t.send(b"\x1b[?7701;2$y")
     t.collect(1.5)
-    check("full screen with the mouse captured keeps the capture, and takes no bar or frame", "File  Edit" not in t.screen().text()
-          and "Mouse released" not in t.raw.decode("utf-8", "replace"), t.screen())
-    check("and a release right after the change (the display letting go, played here) is answered by asking again",
-          t.raw.count(b"\x1b[?7701h") == 2 and "asking for the lock again" in rd(), (t.raw.count(b"\x1b[?7701h"), rd()))
+    check("full screen with the mouse captured takes no bar or frame", "File  Edit" not in t.screen().text(), t.screen())
+    check("and a release right after the change (the display letting go, played here) is not answered by asking again",
+          t.raw.count(b"\x1b[?7701h") == 1 and "asking for the lock again" not in rd(), (t.raw.count(b"\x1b[?7701h"), rd()))
+    t.close()
+    # A window that opens (a restored one included) in a relative-mouse game never asks for the lock without a click.
+    t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)
+    t.collect(3.0)
+    check("a relative-mouse game that has not been clicked in asks for no lock", b"\x1b[?7701h" not in t.raw, t.raw[-200:])
     t.close()
     # A capture that has had no report when Release Pointer is pressed (the click's own release never came) is let go, not taken for a refusal.
     t = desk('dt_resize "$BID" 23 74\ndt_move "$BID" 3 8', lockbox, False, {"DT_HOVER": "on"}, ["lock"], pre)
