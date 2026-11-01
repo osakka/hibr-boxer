@@ -31,7 +31,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.33
+app boxerplay "A DOS game from a gamebox" 0.34
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -808,7 +808,7 @@ fn boxerplay_draw(int id, int h, int w, int row, int col) {
 	retro size "$p" "$w" "$h" "$m"
 	# The window's own cells start one in from its frame; with none, in full screen, at the corner.
 	if [ "${DT_FULL-}" = "$id" ]; then
-		console pen white black
+		console pen white "${BX_BORDER:-black}"
 		console fill -p "w$id" 0 0 "$h" "$w" " "
 		retro draw "$p" 0 0 -p "w$id" 2> /dev/null
 	else

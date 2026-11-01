@@ -9,7 +9,7 @@
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.11
+app boxerset "The Control Panel pane for Boxer" 0.12
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
 	dt_app bxfield "Games Folder" 9 64 "" "" fixed hidden
@@ -48,14 +48,16 @@ BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
 BX_ART="${BX_ART-off}"
+BX_BORDER="${BX_BORDER-black}"
 BX_SEARCH="${BX_SEARCH-}"
 [ -n "$BX_SEARCH" ] || BX_SEARCH="{name} box cover"
 BX_ENGINE="${BX_ENGINE-}"
 [ -n "$BX_ENGINE" ] || BX_ENGINE="https://duckduckgo.com/?q={q}&iax=images&ia=images"
-command -v dt_keep > /dev/null && dt_keep BX_SEARCH BX_ENGINE BX_ART BX_SHELF BX_PIC BX_ASPECT BX_HOLD BX_SOUND BX_MOUSE BX_MOUSEV BX_CAPTURE BX_RELKEY BX_CONFIRM BX_AUTOCLOSE BX_LIMIT BX_CARD BX_MIDIDIR BX_MIDI
+command -v dt_keep > /dev/null && dt_keep BX_BORDER BX_SEARCH BX_ENGINE BX_ART BX_SHELF BX_PIC BX_ASPECT BX_HOLD BX_SOUND BX_MOUSE BX_MOUSEV BX_CAPTURE BX_RELKEY BX_CONFIRM BX_AUTOCLOSE BX_LIMIT BX_CARD BX_MIDIDIR BX_MIDI
 
 # follow is Control Panel > Pictures, as the wallpaper's and YouTube's are.
 BXS_PICS=(follow pixels half)
+BXS_BORDERS=(black "#111111" "#222222" "#333333" "#0d1b2a")
 BXS_ASPECTS=(4:3 auto 16:10 16:9 1:1)
 BXS_HOLDS=(60 120 200 300 500)
 BXS_MICE=(direct relative off)
@@ -66,6 +68,7 @@ BXS_CARDS=(sb16 sbpro2 sb1 none)
 declare -gA BXF
 
 fn cp_set_bxpic(int? id = "", value = "") { BX_PIC=$value; cp_save; }
+fn cp_set_bxborder(int? id = "", value = "") { BX_BORDER=$value; cp_save; }
 fn cp_set_bxaspect(int? id = "", value = "") { BX_ASPECT=$value; cp_save; }
 fn cp_set_bxhold(int? id = "", value = "") { BX_HOLD=$value; cp_save; }
 fn cp_set_bxmouse(int? id = "", value = "") { BX_MOUSE=$value; cp_save; }
@@ -113,6 +116,9 @@ fn boxerset_rows(int w) {
 	n=$((n + 1))
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Shape"
 	CP[$w][$n]["val"]="$BX_ASPECT"; CP[$w][$n]["key"]=aspect
+	n=$((n + 1))
+	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Full Screen Border"
+	CP[$w][$n]["val"]="$BX_BORDER"; CP[$w][$n]["key"]=border
 	n=$((n + 1))
 	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Keys"; n=$((n + 1))
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Release Mouse Key"
@@ -166,6 +172,7 @@ fn boxerset_do(int? w = "", k = "", int? dir = "") {
 	shelf) bxs_dialog shelf; return 0 ;;
 	pic) v := cp_next "$BX_PIC" "$dir" "${BXS_PICS[@]}"; BX_PIC=$v ;;
 	aspect) v := cp_next "$BX_ASPECT" "$dir" "${BXS_ASPECTS[@]}"; BX_ASPECT=$v ;;
+	border) v := cp_next "$BX_BORDER" "$dir" "${BXS_BORDERS[@]}"; BX_BORDER=$v ;;
 	relkey) v := cp_next "$BX_RELKEY" "$dir" "${BXS_RELKEYS[@]}"; BX_RELKEY=$v ;;
 	hold) v := cp_next "$BX_HOLD" "$dir" "${BXS_HOLDS[@]}"; BX_HOLD=$v ;;
 	mouse) v := cp_next "$BX_MOUSE" "$dir" "${BXS_MICE[@]}"; BX_MOUSE=$v ;;
@@ -191,6 +198,7 @@ fn boxerset_drop(int? w = "", int? r = "", int? c = "", k = "") {
 	case $k in
 	pic) dt_droplist "$w" "$r" "$c" cp_set_bxpic "${BXS_PICS[@]}" ;;
 	aspect) dt_droplist "$w" "$r" "$c" cp_set_bxaspect "${BXS_ASPECTS[@]}" ;;
+	border) dt_droplist "$w" "$r" "$c" cp_set_bxborder "${BXS_BORDERS[@]}" ;;
 	relkey) dt_droplist "$w" "$r" "$c" cp_set_bxrel "${BXS_RELKEYS[@]}" ;;
 	hold) dt_droplist "$w" "$r" "$c" cp_set_bxhold "${BXS_HOLDS[@]}" ;;
 	mouse) dt_droplist "$w" "$r" "$c" cp_set_bxmouse "${BXS_MICE[@]}" ;;
