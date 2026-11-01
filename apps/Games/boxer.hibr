@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.28
+app boxer "DOS games, one folder to a game" 1.29
 # modules: img retro fetch
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -162,7 +162,11 @@ declare -gA BCJ
 # `fetch` sets this; a desktop file under strict vars declares what a module sets for it.
 FETCH_STATUS=0
 BX_ART="${BX_ART-off}"
-command -v dt_keep > /dev/null && dt_keep BX_ART
+BX_SEARCH="${BX_SEARCH-}"
+[ -n "$BX_SEARCH" ] || BX_SEARCH="{name} box cover"
+BX_ENGINE="${BX_ENGINE-}"
+[ -n "$BX_ENGINE" ] || BX_ENGINE="https://duckduckgo.com/?q={q}&iax=images&ia=images"
+command -v dt_keep > /dev/null && dt_keep BX_ART BX_SEARCH BX_ENGINE
 
 # The cover a box has, or nothing.
 fn bc_path(box) {
@@ -576,13 +580,24 @@ fn bc_set(box, pic) {
 	return 0
 }
 
-# For another app (the browser's "Use as cover"): the games in the games folder, one box path to a line.
+BX_GAMELIST=()
+# For another app (the browser's "Use as cover"): fill BX_GAMELIST with the games in the games folder, a box path each.
+fn bx_gamelist() {
+	local b
+
+	BX_GAMELIST=()
+	for b in "$BX_SHELF"/*.boxer "$BX_SHELF"/*.gamebox; do
+		[ -d "$b" ] && BX_GAMELIST+=("$b")
+	done
+	return 0
+}
+
+# The same list printed, one box path to a line.
 fn bx_games() {
 	local b
 
-	for b in "$BX_SHELF"/*.boxer "$BX_SHELF"/*.gamebox; do
-		[ -d "$b" ] && echo "$b"
-	done
+	bx_gamelist
+	for b in "${BX_GAMELIST[@]}"; do echo "$b"; done
 	return 0
 }
 
@@ -1170,19 +1185,67 @@ fn bx_askdraw(int id, int h, int w, ...lines) {
 
 # --- Find Cover: a search and the candidates side by side, one chosen ----------------
 #
-# Opened from a game's right-click menu with the game's name already in the search
-# and the best match already selected, so Enter is as quick as a blind fetch was. Type
-# to change the search (another spelling, a subtitle) and Enter looks again; the arrows
-# or a click choose; Enter or Use This keeps it. The candidates are the libretro
+# Opened from a game's right-click menu with the candidates for the game's name already
+# found and the best match already selected, so Enter is as quick as a blind fetch was.
+# The search shown is the person's template (Control Panel > Boxer > Cover Search) made
+# out of the game, and is not typed over; Search the web opens it in the browser, at
+# the person's search engine. The arrows or a click choose; Enter or Use This keeps it. The candidates are the libretro
 # thumbnails project's box art, title screens and screenshots, found loosely (the
 # searching is on this machine; only the pictures are fetched). A picture dropped on
 # the window is the cover too.
 
+# Percent-encode a search for a web address: letters, digits and - _ . ~ as they are, a space as +, the rest as %XX.
+fn bx_urlenc(t) {
+	local o= i ch hex
+
+	for ((i = 0; i < ${#t}; i++)); do
+		ch=${t:i:1}
+		case $ch in
+		[A-Za-z0-9._~-]) o+=$ch ;;
+		" ") o+=+ ;;
+		*) hex=$(printf '%s' "$ch" | od -An -tx1 | tr -d ' \n' | tr a-f A-F); o+=$(printf '%s' "$hex" | sed 's/../%&/g') ;;
+		esac
+	done
+	ret "$o"
+}
+
+# The search for a game's cover from the person's template: {name} is the game's name without a (year) or [tag],
+# {year} the year if its name has one, {program} the program it runs. An empty one leaves no gap.
+fn bx_searchtext(box, name) {
+	local t=${BX_SEARCH:-"{name} box cover"} y= p= n=$name
+
+	y=$(printf '%s' "$name" | sed -nE 's/.*[[(]((19|20)[0-9][0-9])[])].*/\1/p' | head -n 1)
+	n=$(printf '%s' "$name" | sed 's/[[(][^])]*[])]//g; s/  */ /g; s/^ //; s/ $//')
+	[ -n "$n" ] || n=$name
+	if [ -r "$box/boxer.json" ] && json parse BCJ "$(< "$box/boxer.json")" 2> /dev/null; then
+		p := bp_get BCJ .launch.program ""
+		p=${p##*[/\\]}
+		p=${p%.*}
+	fi
+	t=${t//"{name}"/$n}
+	t=${t//"{year}"/$y}
+	t=${t//"{program}"/$p}
+	t=$(printf '%s' "$t" | sed 's/  */ /g; s/^ //; s/ $//')
+	ret "$t"
+}
+
+# Open the person's search engine at that search in the browser.
+fn bx_searchweb(int id) {
+	local u=${BX_ENGINE:-"https://duckduckgo.com/?q={q}&iax=images&ia=images"} q
+
+	q := bx_urlenc "${BX[$id]["ptext"]}"
+	case $u in *"{q}"*) u=${u//"{q}"/$q} ;; *) u="$u$q" ;; esac
+	if dt_has browser_draw && dt_has dt_launch; then
+		dt_launch browser "$u"
+	else
+		dt_notep high "%s" "The Browser is not installed. Find it in the Catalogue. $u"
+	fi
+	return 0
+}
+
 fn boxerpick_open(int id, arg = "") {
 	bx_askopen "$id" "$arg"
-	BX[$id]["ptext"]=${BX[$id]["name"]}
-	BX[$id]["pcur"]=${#BX[$id]["ptext"]}
-	BX[$id]["pfocus"]=0
+	BX[$id]["ptext"] := bx_searchtext "$arg" "${BX[$id]["name"]}"
 	BX[$id]["pn"]=0
 	BX[$id]["psel"]=0
 	BX[$id]["ppage"]=0
@@ -1197,11 +1260,11 @@ fn bx_picksearch(int id) {
 	BX[$id]["pmsg"]=
 	if dt_has dt_job; then
 		BX[$id]["pbusy"]=1
-		n := dt_job boxerpick "$id" bx_pickdone bc_pick "${BX[$id]["ptext"]}"
+		n := dt_job boxerpick "$id" bx_pickdone bc_pick "${BX[$id]["name"]}"
 		BX[$id]["pjob"]=$n
 		return 0
 	fi
-	bx_pickfill "$id" "$(bc_pick "${BX[$id]["ptext"]}")"
+	bx_pickfill "$id" "$(bc_pick "${BX[$id]["name"]}")"
 	return 0
 }
 
@@ -1218,7 +1281,7 @@ fn bx_pickfill(int id, found) {
 	BX[$id]["psel"]=0
 	BX[$id]["ppage"]=0
 	BX[$id]["pbusy"]=0
-	[ "$i" = 0 ] && BX[$id]["pmsg"]="Nothing found for \"${BX[$id]["ptext"]}\": try another spelling, or a word of the title"
+	[ "$i" = 0 ] && BX[$id]["pmsg"]="Nothing found for \"${BX[$id]["name"]}\": Search the web, then drop a picture here"
 	return 0
 }
 
@@ -1245,7 +1308,7 @@ fn bx_pickkind(set) {
 }
 
 fn boxerpick_draw(int id, int h, int w, int row, int col) {
-	local on=${BX[$id]["pfocus"]:-0} cur=0 n=${BX[$id]["pn"]:-0} sel=${BX[$id]["psel"]:-0} per=8
+	local n=${BX[$id]["pn"]:-0} sel=${BX[$id]["psel"]:-0} per=8
 	local tw th pw ph i k r c d w0 h0 rows cols line set name path msg
 
 	dt_wclear "$id"
@@ -1255,9 +1318,9 @@ fn boxerpick_draw(int id, int h, int w, int row, int col) {
 	dt_tput "$id" 1 2 "Find a cover for ${BX[$id]["name"]}"
 	console pen "$DT_INK" "$DT_FACE"
 	dt_tput "$id" 2 2 "Search"
-	[ "$on" = 1 ] && cur=${BX[$id]["pcur"]}
-	dt_textdraw "$id" 2 10 $((w - 12)) "${BX[$id]["ptext"]}" "$cur" "$on"
-	dt_wreg "$id" 2 10 $((w - 12)) q
+	console pen "$DT_DIM" "$DT_FACE"
+	dt_tput "$id" 2 10 "${BX[$id]["ptext"]:0:$((w - 12))}"
+	console pen "$DT_INK" "$DT_FACE"
 	tw=$(((w - 4) / 4))
 	th=$(((h - 8) / 2))
 	[ "$th" -lt 5 ] && th=5
@@ -1307,8 +1370,8 @@ fn boxerpick_draw(int id, int h, int w, int row, int col) {
 		msg="$n found. Enter keeps the one with the marker; arrows or a click choose; PgDn for more"
 	fi
 	dt_tput "$id" $((h - 4)) 2 "${msg:0:$((w - 4))}"
-	dt_tput "$id" $((h - 3)) 2 "Type to change the search, Enter looks again. Esc closes. Drop a picture here to use it."
-	dt_dlgbtns "$id" "$h" "$w" ok ok "Use This" cancel Cancel
+	dt_tput "$id" $((h - 3)) 2 "W searches the web, and a picture dropped here is the cover. Esc closes."
+	dt_dlgbtns "$id" "$h" "$w" ok ok "Use This" web "Search the web" cancel Cancel
 }
 
 # Keep the picture that has the marker as the game's cover.
@@ -1323,52 +1386,25 @@ fn bx_pickuse(int id) {
 		return 0
 	fi
 	bc_kind_set "$box" picked
-	dt_notep low "Cover set for ${BX[$id]["name"]}"
+	dt_notep low "Cover set for %s" "${BX[$id]["name"]}"
 	dt_del "$id"
 	return 0
 }
 
 fn boxerpick_key(int id, key) {
-	local res n=${BX[$id]["pn"]:-0} sel=${BX[$id]["psel"]:-0} per=8
+	local n=${BX[$id]["pn"]:-0} sel=${BX[$id]["psel"]:-0} per=8
 
-	if [ "${BX[$id]["pfocus"]:-0}" = 1 ]; then
-		case $key in
-		escape | tab | down) BX[$id]["pfocus"]=0; return 0 ;;
-		enter) BX[$id]["pfocus"]=0; bx_picksearch "$id"; return 0 ;;
-		esac
-		res := dt_textkey "${BX[$id]["ptext"]}" "${BX[$id]["pcur"]}" "$key" || return 0
-		BX[$id]["ptext"]=${res% *}
-		BX[$id]["pcur"]=${res##* }
-		return 0
-	fi
 	case $key in
 	escape) dt_del "$id"; return 0 ;;
 	enter) bx_pickuse "$id"; return 0 ;;
-	tab) BX[$id]["pfocus"]=1; BX[$id]["pcur"]=${#BX[$id]["ptext"]}; return 0 ;;
+	w | W) bx_searchweb "$id"; return 0 ;;
 	left) [ "$sel" -gt 0 ] && sel=$((sel - 1)) ;;
 	right) [ $((sel + 1)) -lt "$n" ] && sel=$((sel + 1)) ;;
-	up)
-		if [ "$sel" -ge 4 ]; then
-			sel=$((sel - 4))
-		else
-			BX[$id]["pfocus"]=1
-			BX[$id]["pcur"]=${#BX[$id]["ptext"]}
-			return 0
-		fi
-		;;
+	up) [ "$sel" -ge 4 ] && sel=$((sel - 4)) ;;
 	down) [ $((sel + 4)) -lt "$n" ] && sel=$((sel + 4)) ;;
 	pagedown | pgdn) sel=$((sel + per)); [ "$sel" -ge "$n" ] && sel=$((n - 1)) ;;
 	pageup | pgup) sel=$((sel - per)); [ "$sel" -lt 0 ] && sel=0 ;;
-	*)
-		if [ "${#key}" = 1 ] || [ "$key" = backspace ]; then
-			BX[$id]["pfocus"]=1
-			BX[$id]["pcur"]=${#BX[$id]["ptext"]}
-			res := dt_textkey "${BX[$id]["ptext"]}" "${BX[$id]["pcur"]}" "$key" || return 0
-			BX[$id]["ptext"]=${res% *}
-			BX[$id]["pcur"]=${res##* }
-		fi
-		return 0
-		;;
+	*) return 0 ;;
 	esac
 	[ "$sel" -lt 0 ] && sel=0
 	BX[$id]["psel"]=$sel
@@ -1391,25 +1427,24 @@ fn boxerpick_mouse(int id, act, btn, int r, int c, mods = "") {
 		else
 			BX[$id]["psel"]=$k
 		fi
-		BX[$id]["pfocus"]=0
 		;;
-	q) BX[$id]["pfocus"]=1; BX[$id]["pcur"]=${#BX[$id]["ptext"]} ;;
 	ok) bx_pickuse "$id" ;;
+	web) bx_searchweb "$id" ;;
 	cancel) dt_del "$id" ;;
 	esac
 	return 0
 }
 
-# A picture dropped on the window is the cover, as it is.
+# A picture dropped on the window is the cover: a PNG as it is, a JPEG saved as a PNG first.
 fn boxerpick_drop(int id, int r, int c, op, ...paths) {
 	local box=${BX[$id]["ibox"]}
 
 	[ -n "${paths[0]-}" ] || return 0
-	if bc_set "$box" "${paths[0]}" 2> /dev/null; then
-		dt_notep low "Cover set for ${BX[$id]["name"]}"
-		dt_del "$id"
+	if bx_setcover "$box" "${paths[0]}"; then
+		dt_notep low "Cover set for %s" "${BX[$id]["name"]}"
+		dt_wantclose "$id"
 	else
-		dt_notep high "A cover must be a PNG"
+		dt_notep high "That picture could not be used: a PNG, or a JPEG where hibr can convert it"
 	fi
 	return 0
 }

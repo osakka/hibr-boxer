@@ -9,7 +9,7 @@
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.10
+app boxerset "The Control Panel pane for Boxer" 0.11
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
 	dt_app bxfield "Games Folder" 9 64 "" "" fixed hidden
@@ -48,7 +48,11 @@ BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
 BX_ART="${BX_ART-off}"
-command -v dt_keep > /dev/null && dt_keep BX_ART BX_SHELF BX_PIC BX_ASPECT BX_HOLD BX_SOUND BX_MOUSE BX_MOUSEV BX_CAPTURE BX_RELKEY BX_CONFIRM BX_AUTOCLOSE BX_LIMIT BX_CARD BX_MIDIDIR BX_MIDI
+BX_SEARCH="${BX_SEARCH-}"
+[ -n "$BX_SEARCH" ] || BX_SEARCH="{name} box cover"
+BX_ENGINE="${BX_ENGINE-}"
+[ -n "$BX_ENGINE" ] || BX_ENGINE="https://duckduckgo.com/?q={q}&iax=images&ia=images"
+command -v dt_keep > /dev/null && dt_keep BX_SEARCH BX_ENGINE BX_ART BX_SHELF BX_PIC BX_ASPECT BX_HOLD BX_SOUND BX_MOUSE BX_MOUSEV BX_CAPTURE BX_RELKEY BX_CONFIRM BX_AUTOCLOSE BX_LIMIT BX_CARD BX_MIDIDIR BX_MIDI
 
 # follow is Control Panel > Pictures, as the wallpaper's and YouTube's are.
 BXS_PICS=(follow pixels half)
@@ -96,6 +100,13 @@ fn boxerset_rows(int w) {
 	CP[$w][$n]["wtype"]=bool
 	CP[$w][$n]["val"]=off; [ "$BX_ART" = on ] && CP[$w][$n]["val"]=on
 	CP[$w][$n]["key"]=art; n=$((n + 1))
+	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Cover Search"; n=$((n + 1))
+	CP[$w][$n]["kind"]=action; CP[$w][$n]["text"]="Search Text${GL[ellipsis]}"
+	CP[$w][$n]["val"]="$BX_SEARCH"; CP[$w][$n]["key"]=search
+	n=$((n + 1))
+	CP[$w][$n]["kind"]=action; CP[$w][$n]["text"]="Search Engine${GL[ellipsis]}"
+	CP[$w][$n]["val"]="$BX_ENGINE"; CP[$w][$n]["key"]=engine
+	n=$((n + 1))
 	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Display"; n=$((n + 1))
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Rendering"
 	CP[$w][$n]["val"]="$BX_PIC"; CP[$w][$n]["key"]=pic
@@ -166,6 +177,8 @@ fn boxerset_do(int? w = "", k = "", int? dir = "") {
 	sound) [ "$BX_SOUND" = on ] && BX_SOUND=off || BX_SOUND=on ;;
 	card) v := cp_next "$BX_CARD" "$dir" "${BXS_CARDS[@]}"; BX_CARD=$v ;;
 	mididir) bxs_dialog midi; return 0 ;;
+	search) bxs_dialog search; return 0 ;;
+	engine) bxs_dialog engine; return 0 ;;
 	midi) m := bxs_midis; read -ra ml <<< "$m"; v := cp_next "$BX_MIDI" "$dir" "${ml[@]}"; BX_MIDI=$v ;;
 	esac
 	cp_save
@@ -197,10 +210,14 @@ fn bxs_dialog(what = shelf) {
 	dt_dlgat "$h" "$w"
 	r=$DT_DLGR c=$DT_DLGC h=$DT_DLGH w=$DT_DLGW
 	[ "$what" = midi ] && title="MIDI Synth Folder"
+	[ "$what" = search ] && title="Cover Search Text"
+	[ "$what" = engine ] && title="Cover Search Engine"
 	rid := dt_new "$title" "$h" "$w" "$r" "$c" bxfield
 	BXF[$rid]["what"]=$what
 	BXF[$rid]["path"]=$BX_SHELF
 	[ "$what" = midi ] && BXF[$rid]["path"]=$BX_MIDIDIR
+	[ "$what" = search ] && BXF[$rid]["path"]=$BX_SEARCH
+	[ "$what" = engine ] && BXF[$rid]["path"]=$BX_ENGINE
 	BXF[$rid]["cur"]=${#BXF[$rid]["path"]}
 	BXF[$rid]["focus"]=path
 }
@@ -212,6 +229,10 @@ fn bxfield_draw(int id, int h, int w, int row, int col) {
 	console pen "$DT_INK" "$DT_FACE"
 	if [ "${BXF[$id]["what"]}" = midi ]; then
 		dt_tput "$id" 1 2 "The folder with your SoundFonts (.sf2) and Roland ROMs:"
+	elif [ "${BXF[$id]["what"]}" = search ]; then
+		dt_tput "$id" 1 2 "What Find Cover searches for, made out of the game:"
+	elif [ "${BXF[$id]["what"]}" = engine ]; then
+		dt_tput "$id" 1 2 "The web address Find Cover searches the web at:"
 	else
 		dt_tput "$id" 1 2 "Games are kept in this folder, one NAME.boxer to a game:"
 	fi
@@ -221,6 +242,10 @@ fn bxfield_draw(int id, int h, int w, int row, int col) {
 	console pen "$DT_DIM" "$DT_FACE"
 	if [ "${BXF[$id]["what"]}" = midi ]; then
 		dt_tput "$id" 5 2 "MT32_CONTROL.ROM with MT32_PCM.ROM, ROM1.BIN, or a .sf2. Empty for none."
+	elif [ "${BXF[$id]["what"]}" = search ]; then
+		dt_tput "$id" 5 2 "{name} {year} {program} are filled in: {name} DOS box art"
+	elif [ "${BXF[$id]["what"]}" = engine ]; then
+		dt_tput "$id" 5 2 "{q} is where the search goes in the address."
 	else
 		dt_tput "$id" 5 2 "It is made if it is not there. Games already in the old one stay there."
 	fi
@@ -231,6 +256,17 @@ fn bxfield_ok(int id) {
 	local p=${BXF[$id]["path"]}
 
 	p=${p//[$'\t\n']/ }
+	case ${BXF[$id]["what"]} in
+	search | engine)
+		if [ -z "${p// /}" ]; then
+			[ "${BXF[$id]["what"]}" = search ] && p="{name} box cover" || p="https://duckduckgo.com/?q={q}&iax=images&ia=images"
+		fi
+		[ "${BXF[$id]["what"]}" = search ] && BX_SEARCH=$p || BX_ENGINE=$p
+		cp_save
+		dt_del "$id"
+		return 0
+		;;
+	esac
 	case $p in "~") p=$HOME ;; "~/"*) p="$HOME/${p#"~/"}" ;; esac
 	if [ "${BXF[$id]["what"]}" = midi ]; then
 		if [ -n "${p// /}" ] && [ ! -d "$p" ]; then

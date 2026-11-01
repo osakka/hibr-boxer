@@ -4,6 +4,15 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## Boxer 1.29 (Nov 1)
+- **Find Cover searches the web too.** The search in the window is now made from a template and is not
+  typed over (`{name} box cover` to begin with; `{name}`, `{year}` and `{program}` are filled in), and
+  **Search the web** (button, or W) opens the Browser at it, on the person's search engine (DuckDuckGo
+  images to begin with). Both are in Control Panel > Boxer > Cover Search. A picture found there becomes
+  the cover through the Browser's "Use as cover for a game...". The candidates from the thumbnails project
+  are still found by the game's name. (Typing a different search in the window is gone.)
+- `bx_gamelist` fills the array `BX_GAMELIST` with the games in the games folder, for an app that cannot read printed output (`bx_games` still prints them).
+
 ## Boxer 1.28 (Nov 1)
 - **Find Cover found nothing, always (1.25 to 1.27): fixed.** Downloads through hibr's `fetch` failed
   inside the desktop (the variable `fetch` sets was not declared there), so every list came back empty

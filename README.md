@@ -100,15 +100,22 @@ which DOSBox Pure plays through; **MIDI Output** chooses one, for every game or 
 A game's cover is `.cover.png` in its box (`cover.png` is read too). One you put there always wins;
 one that came with a game, or sits beside it, is taken in on import.
 
-**Find Cover** (right-click a game in Files) is the way to choose one. It opens with the game's name
-already in the search and the search already run, and shows the candidates side by side as pictures:
-the libretro thumbnails project's box art, its title screens and its screenshots, each labelled.
-The best match is already marked, so **Enter keeps it**. The arrow keys or a click choose another (a
-second click keeps it), **typing changes the search** (another spelling, a subtitle) and Enter
-looks again, **Esc** closes with nothing changed, and a **picture dropped on the window** is the
-cover as it is (a PNG). Nothing is asked: choosing Find Cover and typing the search is the asking.
-The search itself runs on this machine against the project's list of names (fetched once, kept a
-month); only the pictures are downloaded, with hibr's own `fetch`, so no `curl` is needed.
+**Find Cover** (right-click a game in Files) is the way to choose one. It opens with the candidates for
+the game's name already found, shown side by side as pictures: the libretro thumbnails project's box art,
+its title screens and its screenshots, each labelled. The best match is already marked, so **Enter keeps
+it**. The arrow keys or a click choose another (a second click keeps it), **Esc** closes with nothing
+changed, and a **picture dropped on the window** is the cover (a PNG as it is, a JPEG saved as a PNG first, hibr 0.99.404). Nothing is asked. The
+searching runs on this machine against the project's list of names (fetched once, kept a month); only the
+pictures are downloaded, with hibr's own `fetch`, so no `curl` is needed.
+
+When none of them is right, **Search the web** (the button, or **W**) opens the Browser at a web search for
+the game, usually a better picture than the project has. The search shown in the window is made from a
+template and is not typed over: `{name} box cover` to begin with, where `{name}` is the game's name
+without its (year), `{year}` its year if the name has one and `{program}` the program it runs. Change it
+in Control Panel > Boxer > Cover Search > **Search Text** (`{name} DOS box art`, `{name} {year} box cover`).
+**Search Engine** in the same place is the web address it opens, with `{q}` where the search goes;
+DuckDuckGo's image search to begin with, and any engine that takes the search in its address will do. In
+the Browser, "Use as cover for a game..." (Browser 2.21) makes the picture found the game's cover.
 
 **Automatic fetching** is separate and **off by default**, because it sends the game's name to a
 server with nobody asking: Control Panel > Boxer > Fetch Box Art. When on, every import gets its cover
@@ -130,7 +137,8 @@ one, `boxer.hibr covers` fills in the shelf (and swaps a title screen for box ar
 - Only PNG covers are shown by Files, so a picture from the open web (mostly JPEG) cannot be used until
   hibr can save one as PNG (`img save`, hibr 0.99.404: a JPEG is converted, a WebP, GIF or CMYK JPEG is not).
 - **For other apps** (the browser's "Use as cover for a game…"): with Boxer loaded, `bx_games` lists the
-  games in the games folder (one box path a line) and `bx_setcover BOX PICTURE` makes a picture a
+  games in the games folder (one box path a line; `bx_gamelist` fills the array `BX_GAMELIST` with them
+  instead, for a caller that cannot read printed output) and `bx_setcover BOX PICTURE` makes a picture a
   game's cover: a PNG as it is, anything else saved as a PNG first by `img save` (hibr 0.99.404) where hibr has it,
   else refused (status 1). Check `dt_has bx_setcover` first.
 

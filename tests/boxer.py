@@ -108,12 +108,12 @@ for nm in ("Alpha Quest", "Beta Racer", "Gamma Blast"):
 png(os.path.join(shelf, "Beta Racer.boxer", "cover.png"), 60, 80, (200, 40, 40))
 
 
-def appdesk(app, arg, pix=False, rows=40, cols=100):
+def appdesk(app, arg, pix=False, rows=40, cols=100, after=""):
     p = sx.scratch("boxerapp.hibr")
     open(p, "w").write(
         "%s. %s\n. %s/apps/boxerplay.hibr\n. %s/apps/Games/boxer.hibr\n"
-        "dt_open\nBID := dt_launch %s \"%s\"\ndt_run\ndt_close\n"
-        % (load("console", "img", RETRO), DESK, ROOT, ROOT, app, arg))
+        "dt_open\nBID := dt_launch %s \"%s\"\n%s\ndt_run\ndt_close\n"
+        % (load("console", "img", RETRO), DESK, ROOT, ROOT, app, arg, after))
     kw = dict(cellw=8, cellh=16, caps=["kitty"]) if pix else {}
     return Term(p, rows=rows, cols=cols, settle=1.0, env=ENVBASE, **kw)
 
@@ -1034,16 +1034,32 @@ t.close()
 wb = boxnamed("Zzz Unknown Game")
 t = appdesk("boxerpick", wb)
 tx = covers_at(t, 5.0)
-check("a name with no candidates says so and how to look again", "Nothing found" in tx and "another spelling" in tx, t.screen())
-t.send(b"\t")
-t.send(b"\x7f" * 20 + b"Leisure Suit Larry 2\r")
-tx = covers_at(t)
-check("the search is changed by typing, and Enter looks again", "Leisure Suit Larry 2" in tx and "box art" in tx and "Nothing found" not in tx, t.screen())
-t.send(b"\r")
-t.collect(1.0)
-check("and the one found is kept", lit(wb + "/.cover.png") and open(wb + "/.cover.png", "rb").read() == open(
-      art + "/Named_Boxarts/Leisure Suit Larry 2 - Goes looking for Love in Several Wrong Places (1988).png", "rb").read(), t.screen())
+check("a name with no candidates says so and points to the web search", "Nothing found" in tx and "Search the web" in tx, t.screen())
+check("the search shown is the game and the words, and cannot be typed over", "Zzz Unknown Game box cover" in tx, t.screen())
+t.send(b"abc")
+t.collect(0.5)
+check("typing does not change it", "Zzz Unknown Game box cover" in t.screen().text() and "abc" not in t.screen().text(), t.screen())
+t.send(b"w")
+t.collect(1.5)
+check("with no Browser installed W says so", "Browser is not installed" in notetext(t), notetext(t))
 t.close()
+t = appdesk("boxerpick", wb, after="fn browser_draw() { return 0; }\nfn dt_launch(n, arg = \"\") { echo \"$n $arg\" > $XDG_RUNTIME_DIR/opened.txt; }")
+covers_at(t, 5.0)
+t.send(b"w")
+t.collect(1.5)
+time.sleep(0.3)
+opened = open(D + "/opened.txt").read().strip() if os.path.exists(D + "/opened.txt") else None
+check("W opens the Browser at the search engine with that search (DuckDuckGo images unless the person chose another)",
+      opened == "browser https://duckduckgo.com/?q=Zzz+Unknown+Game+box+cover&iax=images&ia=images", opened)
+t.close()
+
+out, err = imp("x := bx_searchtext /nonexistent 'Ultima VII [1992] (1993)'; echo \"a=$x\"",
+               "BX_SEARCH='{name} {year} DOS box art'; x := bx_searchtext /nonexistent 'Prince of Persia (1990)'; echo \"b=$x\"",
+               "BX_SEARCH='{name} {program}'; x := bx_searchtext /nonexistent 'Doom'; echo \"c=$x|\"",
+               "x := bx_urlenc 'Sam & Max: Hit the Road/é'; echo \"d=$x\"")
+check("the search text fills {name}, {year}, {program} and leaves no gap; a web address is encoded",
+      "a=Ultima VII box cover" in out and "b=Prince of Persia 1990 DOS box art" in out and "c=Doom|" in out
+      and "d=Sam+%26+Max%3A+Hit+the+Road%2F%C3%A9" in out, (out, err))
 
 wb = boxnamed("Dungeon Keeper")
 t = appdesk("boxerpick", wb)
@@ -1059,6 +1075,8 @@ t.close()
 gb = boxnamed("Interface Game")
 out, err = imp("BX_SHELF=%s; bx_games" % D)
 check("bx_games lists the boxes in the games folder, one to a line", gb in out.split("\n"), (out, err))
+out, err = imp("BX_SHELF=%s; bx_gamelist; printf 'g=%%s\\n' \"${BX_GAMELIST[@]}\"" % D)
+check("bx_gamelist binds the games in an array, no output to catch", "g=" + gb in out.split("\n"), (out, err))
 pngp = D + "/iface.png"
 png(pngp, 6, 6, (9, 99, 199))
 out, err = imp("bx_setcover '%s' '%s'; echo \"st=$?\"" % (gb, pngp))
