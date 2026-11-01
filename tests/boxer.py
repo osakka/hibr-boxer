@@ -490,7 +490,7 @@ if dbp and os.path.exists(dbp):
     open(hsrc + "/HELLO.COM", "wb").write(
         b"\xb4\x09\xba\x10\x01\xcd\x21\xb4\x00\xcd\x16\xb8\x00\x4c\xcd\x21Hello from Boxer$")
     out, err = imp(". %s/apps/boxerplay.hibr" % ROOT,
-                   "b := bx_import %s; mkdir -p %s/hrun; json parse BPJ \"$(< \"$b/boxer.json\")\"; "
+                   "BX_AUTOCLOSE=off; b := bx_import %s; mkdir -p %s/hrun; json parse BPJ \"$(< \"$b/boxer.json\")\"; "
                    "f := bp_conf \"$b\" %s/hrun; echo \"$b|$f\"" % (hsrc, D, D))
     out = out.strip()
     check("the real core: a folder is imported and its conf made", "|" in out, out + err)
@@ -521,7 +521,7 @@ if dbp and os.path.exists(dbp):
             b"\xb8\x00\x00\xcd\x33\xb8\x01\x00\xcd\x33\xb8\x03\x00\xcd\x33\xf6\xc3\x01\x74\xf6"
             b"\xb4\x02\xb2\xdb\xcd\x21\xb4\x02\xb2\xdb\xcd\x21\xb8\x00\x4c\xcd\x21")
         open(cb + "/boxer.json", "w").write('{"boxer":1,"title":"Clicker","launch":{"program":"C:\\\\CLICK.COM"}}')
-        t = desk("", cb, False, {"BP_CORE": dbp})
+        t = desk("", cb, False, {"BP_CORE": dbp, "BX_AUTOCLOSE": "off"})
         for _ in range(40):
             t.collect(0.25)
             if "▀" in t.screen().text():
@@ -642,20 +642,28 @@ if dbp and os.path.exists(dbp):
                   and "C:\\NEWGAME.COM" in di.get("programs", []), (os.listdir(ib + "/drives/c"), di))
             check("and with one program, that is the one to run", di.get("launch", {}).get("program") == "C:\\NEWGAME.COM", di)
             sx.ERRS[errs0:] = [e for e in sx.ERRS[errs0:] if not e.startswith("console: watched descriptor")]
-        # EXIT at the DOS prompt ends the real core only when it is told to exit, which Close When Game Ends does.
+        # When the game's program ends, DOS goes with it (Close When Game Ends): the window closes without anyone typing EXIT;
+        # with that off the window stays, at the DOS prompt.
         for ac in ("on", "off"):
             t = desk("", hb_, False, {"BP_CORE": dbp, "BX_AUTOCLOSE": ac})
             t.collect(5.0)
             t.send(b" ")
-            t.collect(2.0)
-            for ch in (b"e", b"x", b"i", b"t", b"\r"):
-                t.send(ch)
-                t.collect(0.3)
             t.collect(8.0)
             tx = t.screen().text()
-            check("EXIT at the DOS prompt %s with Close When Game Ends %s" % ("closes the window" if ac == "on" else "leaves the window", ac),
+            check("when the program ends the window %s with Close When Game Ends %s" % ("closes" if ac == "on" else "stays at the DOS prompt", ac),
                   ("\u2524 Hello \u251c" not in tx) == (ac == "on"), tx[:300])
             t.close()
+        # EXIT at the DOS prompt of a box with no program ends the real core too.
+        npb = gamebox("No Program Game")
+        open(npb + "/boxer.json", "w").write('{"boxer":1,"title":"No Program Game","engine":"dosbox"}')
+        t = desk("", npb, False, {"BP_CORE": dbp, "BX_AUTOCLOSE": "on"})
+        t.collect(5.0)
+        for ch in (b"e", b"x", b"i", b"t", b"\r"):
+            t.send(ch)
+            t.collect(0.3)
+        t.collect(8.0)
+        check("EXIT at the DOS prompt closes the window", "\u2524 No Program Game \u251c" not in t.screen().text(), t.screen().text()[:300])
+        t.close()
         t = desk("", hb_, True, {"BP_CORE": dbp})
         for _ in range(60):
             t.collect(0.25)

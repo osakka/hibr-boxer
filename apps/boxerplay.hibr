@@ -31,7 +31,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.35
+app boxerplay "A DOS game from a gamebox" 0.36
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -556,10 +556,11 @@ fn bp_tune() {
 # The run.conf of a gamebox, written into dir: its own settings, then the
 # autoexec. The program is a DOS path; its folder is entered first.
 fn bp_conf(box, dir) {
-	local prog args f="$dir/run.conf" d p
+	local prog args f="$dir/run.conf" d p bst
 
 	prog := bp_get BPJ .launch.program
 	args := bp_get BPJ .launch.args
+	bst := bp_get BPJ .state
 	{
 		echo "# made by Boxer from $box; edit engine/dosbox.conf, not this"
 		[ -r "$box/engine/dosbox.conf" ] && awk '
@@ -579,6 +580,8 @@ fn bp_conf(box, dir) {
 			p=${prog##*\\}
 			[ "$d" != "$prog" ] && [ -n "$d" ] && echo "cd $d"
 			echo "$p $args"
+			# The game's program ending ends DOS too; an installer's does not, its window is closed by the person.
+			[ "${BX_AUTOCLOSE-on}" = on ] && [ "$bst" != installing ] && echo "exit"
 		fi
 	} > "$f"
 	ret "$f"

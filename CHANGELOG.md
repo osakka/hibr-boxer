@@ -4,6 +4,11 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## Boxer 1.34 (Nov 1)
+- **DOS goes when the game does.** The game's program was started and DOS was left at its prompt when it ended,
+  so the window stayed up with nothing in it until someone typed EXIT. With Close When Game Ends on (the
+  default) the program is now followed by `exit`, so quitting the game closes the window, as in Boxer.
+
 ## Boxer 1.33 (Nov 1)
 - A game that ends, or whose window closes, gives the pointer lock back first (`dt_pointerlock off`) instead of
   leaving it to the desktop to notice the window has gone.

@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.33
+app boxer "DOS games, one folder to a game" 1.34
 # modules: img retro fetch
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
