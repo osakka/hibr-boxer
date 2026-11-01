@@ -4,6 +4,11 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## Boxer 1.30 (Nov 1)
+- **Full screen paints what the picture does not cover black.** A 4:3 game on a 16:9 display left the
+  rest of the screen to show the wallpaper; the game window now fills its whole pane with black behind
+  the picture.
+
 ## Boxer 1.29 (Nov 1)
 - **Find Cover searches the web too.** The search in the window is now made from a template and is not
   typed over (`{name} box cover` to begin with; `{name}`, `{year}` and `{program}` are filled in), and
