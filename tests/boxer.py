@@ -292,6 +292,20 @@ if 'DT_KEYS["fullscreen"]' in open(HIBR_TREE + "/programs/desktop/wm/settings.hi
         check("and Alt+Enter toggles it out again (%s)" % ("kitty" if pix else "half blocks"), b3[0] and b3[1], b3)
         t.close()
 
+# Control Panel > Boxer > Full Screen Border: a window of coloured blocks; the arrows and Enter, or a click, choose.
+cpscript = sx.scratch("colour.hibr")
+open(cpscript, "w").write("%s. %s\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\nfn cp_save() { echo \"$BX_BORDER\" > %s/border.txt; }\n"
+                          "dt_open\nBX_BORDER='#111111'\nbxs_colours\ndt_run\ndt_close\n" % (load("console"), DESK, HIBR_TREE + "/programs/desktop", ROOT, D))
+t = Term(cpscript, rows=26, cols=82, settle=1.0, env=ENVBASE)
+t.collect(1.5)
+tx = t.screen().text()
+check("the border colour picker shows the blocks and the current one's value", "Full Screen Border" in tx and "#111111" in tx, t.screen())
+t.send(b"\x1b[C\x1b[C\x1b[B\r")
+t.collect(1.0)
+got = open(D + "/border.txt").read().strip() if os.path.exists(D + "/border.txt") else None
+check("the arrows and Enter choose a colour and keep it (two right and one down from the second block)", got == "#1a1a40", got)
+t.close()
+
 # Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
 for conf in ("on", "off"):
     t = desk('sleep 1\ndt_closereq "$BID"\nsleep 0.2\necho "[${BP[$BID]["name"]-gone}]" > %s/closed.%s' % (D, conf), box, env={"BX_CONFIRM": conf})

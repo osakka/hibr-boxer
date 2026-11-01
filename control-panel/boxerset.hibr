@@ -9,10 +9,12 @@
 
 strict
 
-app boxerset "The Control Panel pane for Boxer" 0.12
+app boxerset "The Control Panel pane for Boxer" 0.13
 command -v cp_pane > /dev/null && cp_pane boxerset "Boxer" "▣" app
 command -v dt_app > /dev/null &&
 	dt_app bxfield "Games Folder" 9 64 "" "" fixed hidden
+command -v dt_app > /dev/null &&
+	dt_app bxcolour "Full Screen Border" 14 54 "" "" fixed hidden
 
 # The shelf: the person's Dos Games folder in their home, unless a shelf from
 # before it was called that is there and the new one is not, which is kept
@@ -48,7 +50,7 @@ BX_CARD="${BX_CARD-sb16}"
 BX_MIDIDIR="${BX_MIDIDIR-}"
 BX_MIDI="${BX_MIDI-disabled}"
 BX_ART="${BX_ART-off}"
-BX_BORDER="${BX_BORDER-black}"
+BX_BORDER="${BX_BORDER-#000000}"
 BX_SEARCH="${BX_SEARCH-}"
 [ -n "$BX_SEARCH" ] || BX_SEARCH="{name} box cover"
 BX_ENGINE="${BX_ENGINE-}"
@@ -57,7 +59,10 @@ command -v dt_keep > /dev/null && dt_keep BX_BORDER BX_SEARCH BX_ENGINE BX_ART B
 
 # follow is Control Panel > Pictures, as the wallpaper's and YouTube's are.
 BXS_PICS=(follow pixels half)
-BXS_BORDERS=(black "#111111" "#222222" "#333333" "#0d1b2a")
+BXS_COLOURS=("#000000" "#111111" "#222222" "#333333" "#444444" "#555555" "#777777" "#ffffff"
+	"#0d1b2a" "#1b263b" "#14213d" "#1a1a40" "#2d1b4e" "#3b1c32" "#4a1f1f" "#3d2b1f"
+	"#1f4068" "#1b5e5e" "#2e5e3e" "#556b2f" "#8b6914" "#a0522d" "#8b2f4f" "#5b3f8c"
+	"#1e90ff" "#00a8a8" "#2ecc71" "#c8d400" "#ff9f1a" "#ff4d4d" "#ff4fa3" "#a77bff")
 BXS_ASPECTS=(4:3 auto 16:10 16:9 1:1)
 BXS_HOLDS=(60 120 200 300 500)
 BXS_MICE=(direct relative off)
@@ -66,9 +71,9 @@ BXS_LIMITS=(unlimited pentium2 pentium 486dx2 486dx 386)
 BXS_RELKEYS=(f12 ctrl-f10 f11 f10)
 BXS_CARDS=(sb16 sbpro2 sb1 none)
 declare -gA BXF
+declare -gA BXC
 
 fn cp_set_bxpic(int? id = "", value = "") { BX_PIC=$value; cp_save; }
-fn cp_set_bxborder(int? id = "", value = "") { BX_BORDER=$value; cp_save; }
 fn cp_set_bxaspect(int? id = "", value = "") { BX_ASPECT=$value; cp_save; }
 fn cp_set_bxhold(int? id = "", value = "") { BX_HOLD=$value; cp_save; }
 fn cp_set_bxmouse(int? id = "", value = "") { BX_MOUSE=$value; cp_save; }
@@ -117,7 +122,7 @@ fn boxerset_rows(int w) {
 	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Shape"
 	CP[$w][$n]["val"]="$BX_ASPECT"; CP[$w][$n]["key"]=aspect
 	n=$((n + 1))
-	CP[$w][$n]["kind"]=set; CP[$w][$n]["text"]="Full Screen Border"
+	CP[$w][$n]["kind"]=action; CP[$w][$n]["text"]="Full Screen Border${GL[ellipsis]}"
 	CP[$w][$n]["val"]="$BX_BORDER"; CP[$w][$n]["key"]=border
 	n=$((n + 1))
 	CP[$w][$n]["kind"]=head; CP[$w][$n]["text"]="Keys"; n=$((n + 1))
@@ -172,7 +177,7 @@ fn boxerset_do(int? w = "", k = "", int? dir = "") {
 	shelf) bxs_dialog shelf; return 0 ;;
 	pic) v := cp_next "$BX_PIC" "$dir" "${BXS_PICS[@]}"; BX_PIC=$v ;;
 	aspect) v := cp_next "$BX_ASPECT" "$dir" "${BXS_ASPECTS[@]}"; BX_ASPECT=$v ;;
-	border) v := cp_next "$BX_BORDER" "$dir" "${BXS_BORDERS[@]}"; BX_BORDER=$v ;;
+	border) bxs_colours; return 0 ;;
 	relkey) v := cp_next "$BX_RELKEY" "$dir" "${BXS_RELKEYS[@]}"; BX_RELKEY=$v ;;
 	hold) v := cp_next "$BX_HOLD" "$dir" "${BXS_HOLDS[@]}"; BX_HOLD=$v ;;
 	mouse) v := cp_next "$BX_MOUSE" "$dir" "${BXS_MICE[@]}"; BX_MOUSE=$v ;;
@@ -198,7 +203,7 @@ fn boxerset_drop(int? w = "", int? r = "", int? c = "", k = "") {
 	case $k in
 	pic) dt_droplist "$w" "$r" "$c" cp_set_bxpic "${BXS_PICS[@]}" ;;
 	aspect) dt_droplist "$w" "$r" "$c" cp_set_bxaspect "${BXS_ASPECTS[@]}" ;;
-	border) dt_droplist "$w" "$r" "$c" cp_set_bxborder "${BXS_BORDERS[@]}" ;;
+	border) bxs_colours ;;
 	relkey) dt_droplist "$w" "$r" "$c" cp_set_bxrel "${BXS_RELKEYS[@]}" ;;
 	hold) dt_droplist "$w" "$r" "$c" cp_set_bxhold "${BXS_HOLDS[@]}" ;;
 	mouse) dt_droplist "$w" "$r" "$c" cp_set_bxmouse "${BXS_MICE[@]}" ;;
@@ -207,6 +212,89 @@ fn boxerset_drop(int? w = "", int? r = "", int? c = "", k = "") {
 	card) dt_droplist "$w" "$r" "$c" cp_set_bxcard "${BXS_CARDS[@]}" ;;
 	midi) m := bxs_midis; read -ra ml <<< "$m"; dt_droplist "$w" "$r" "$c" cp_set_bxmidi "${ml[@]}" ;;
 	esac
+}
+
+# --- the border colour picker --------------------------------------------------
+
+# A window of coloured blocks, four rows of eight: a click, or the arrows and Enter, choose.
+fn bxs_colours() {
+	local h=14 w=54 r c rid i
+
+	dt_dlgat "$h" "$w"
+	r=$DT_DLGR c=$DT_DLGC h=$DT_DLGH w=$DT_DLGW
+	rid := dt_new "Full Screen Border" "$h" "$w" "$r" "$c" bxcolour
+	BXC[$rid]["sel"]=0
+	for i in "${!BXS_COLOURS[@]}"; do
+		[ "${BXS_COLOURS[$i]}" = "$BX_BORDER" ] && BXC[$rid]["sel"]=$i
+	done
+	return 0
+}
+
+fn bxcolour_draw(int id, int h, int w, int row, int col) {
+	local i r c k fg sel=${BXC[$id]["sel"]}
+
+	dt_wclear "$id"
+	console pen "$DT_INK" "$DT_FACE"
+	dt_tput "$id" 1 2 "The colour behind the picture in full screen:"
+	for i in "${!BXS_COLOURS[@]}"; do
+		r=$((3 + (i / 8) * 2))
+		c=$((2 + (i % 8) * 6))
+		k=${BXS_COLOURS[$i]}
+		console pen white "$k"
+		console fill -p "w$id" "$r" "$c" 2 6 " "
+		if [ "$i" = "$sel" ]; then
+			fg=white
+			[ "$i" -ge 24 ] || [ "$i" = 7 ] || [ "$i" = 6 ] && fg=black
+			console pen "$fg" "$k" bold
+			dt_tput "$id" "$r" $((c + 2)) "▐▌"
+			dt_tput "$id" $((r + 1)) $((c + 2)) "▐▌"
+		fi
+		dt_wreg "$id" "$r" "$c" 6 "c$i"
+		dt_wreg "$id" $((r + 1)) "$c" 6 "c$i"
+	done
+	console pen "$DT_DIM" "$DT_FACE"
+	dt_tput "$id" 11 2 "${BXS_COLOURS[$sel]}"
+	dt_dlgbtns "$id" "$h" "$w" ok ok Choose cancel Cancel
+}
+
+fn bxcolour_pick(int id) {
+	BX_BORDER=${BXS_COLOURS[${BXC[$id]["sel"]}]}
+	cp_save
+	dt_del "$id"
+}
+
+fn bxcolour_click(int id, int r, int c, btn = "") {
+	local tag
+
+	tag := dt_hit "$id" "$r" "$c"
+	case $tag in
+	c[0-9]*)
+		if [ "${BXC[$id]["sel"]}" = "${tag#c}" ]; then bxcolour_pick "$id"; else BXC[$id]["sel"]=${tag#c}; fi
+		;;
+	ok) bxcolour_pick "$id" ;;
+	cancel) dt_del "$id" ;;
+	esac
+	return 0
+}
+
+fn bxcolour_key(int id, key) {
+	local s=${BXC[$id]["sel"]} n=${#BXS_COLOURS[@]}
+
+	case $key in
+	escape) dt_del "$id"; return 0 ;;
+	enter) bxcolour_pick "$id"; return 0 ;;
+	left) [ "$s" -gt 0 ] && s=$((s - 1)) ;;
+	right) [ $((s + 1)) -lt "$n" ] && s=$((s + 1)) ;;
+	up) [ "$s" -ge 8 ] && s=$((s - 8)) ;;
+	down) [ $((s + 8)) -lt "$n" ] && s=$((s + 8)) ;;
+	*) return 0 ;;
+	esac
+	BXC[$id]["sel"]=$s
+	return 0
+}
+
+fn bxcolour_close(int id) {
+	unset "BXC[$id]"
 }
 
 # --- the shelf folder dialog --------------------------------------------------

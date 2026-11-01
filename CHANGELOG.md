@@ -4,9 +4,9 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
-## Boxer 1.31 (Nov 1)
+## Boxer 1.31 (Nov 1), 1.32 (Nov 1)
 - **Full Screen Border** (Control Panel > Boxer): the colour behind the picture in full screen, black to begin
-  with, so a 4:3 game on a wide display has solid bars even where windows are see-through. Opacity is the
+  with, chosen from a window of 32 coloured blocks (click, or arrows and Enter), so a 4:3 game on a wide display has solid bars even where windows are see-through. Opacity is the
   desktop's own setting.
 
 ## Boxer 1.30 (Nov 1)
