@@ -38,9 +38,11 @@ feature needs is in the table at the end of "Playing".
   speed, graphics, 3dfx Voodoo and its speed, sound card and its IRQ, DMA and port, MIDI, mouse,
   capture, **Speed Limit** and **CPU**. The same menu has **Find Cover** and **Game Is Already
   Installed**.
-- **Quitting.** **Close When Game Ends** closes the window when the game ends (typing `EXIT` at the
-  DOS prompt ends it); **Confirm On Exit** asks before closing a game that is playing. Both are on
-  by default (Control Panel > Boxer).
+- **Quitting.** **Close When Game Ends** closes the window when the game's program ends: Boxer follows the
+  program with `exit`, so quitting the game takes DOS with it (a game with no program set opens at the DOS
+  prompt, and typing `EXIT` there ends it; an installer's window is closed by you, which finishes the
+  install). Off, the window stays at the DOS prompt. **Confirm On Exit** asks before closing a game that is
+  playing. Both are on by default (Control Panel > Boxer).
 
 ### The mouse
 
@@ -52,8 +54,9 @@ feature needs is in the table at the end of "Playing".
   game's own Capture; *seamless* has it all the time). It is hidden while captured. If the pointer
   is not actually held (a terminal that cannot), the note says so and why.
 - **Pointer lock.** Where the terminal can hold the pointer still (Blit 0.2.42 and newer, with hibr
-  0.99.365 and newer), a captured relative-mouse game is locked: the game gets raw motion and can
-  turn without end. The desktop's **Release Pointer** key (Control Panel > Shortcuts, Ctrl+F10 to
+  0.99.365 and newer), a relative-mouse game is locked when you click in it, and only then: never when a
+  window opens or is restored, and not again by itself after a full-screen change or a release. The game
+  gets raw motion and can turn without end. The desktop's **Release Pointer** key (Control Panel > Shortcuts, Ctrl+F10 to
   begin with) lets it go. Elsewhere the pointer is let go at the window's edge, on **Release Mouse
   Key** (Control Panel > Boxer; F12 to begin with).
 - The pointer follows the mouse over a game wherever hibr's hover is on (Auto on Blit, kitty and
@@ -66,6 +69,10 @@ Full Screen, also Window > Full Screen and the title bar's menu) takes the whole
 or frame, and the picture stays; **Ctrl+F11** (Leave Full Screen) or Alt+Enter again gives it back. A
 short note says so when a game goes full screen. It needs hibr 0.99.403; on an older hibr there is only
 Window > Zoom.
+
+A 4:3 game on a wider display gets bars at the sides, filled with a colour of your choice: **Full Screen
+Border** (Control Panel > Boxer) opens a window of coloured blocks, black to begin with. It is a solid
+colour, so the wallpaper does not show through however see-through the windows are.
 
 ### Speed
 
@@ -94,6 +101,7 @@ which DOSBox Pure plays through; **MIDI Output** chooses one, for every game or 
 | pointer hiding while captured | hibr 0.99.311; Blit 0.2.8 |
 | pointer lock | hibr 0.99.365 and `hibr-retro` 0.1.6; Blit 0.2.42; Restart Desktop after upgrading |
 | full screen (the desktop's Full Screen key) | hibr 0.99.403; 0.99.392 for two displays |
+| Find Cover's Search the web, and Use as cover for a game | the Browser (2.21 for the cover row); JPEGs need hibr 0.99.404 |
 
 ## Box art
 

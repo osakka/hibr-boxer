@@ -2,7 +2,7 @@
 
 > **Superseded in part by [ADR 0002](adr/0002-dos-only.md): ScummVM is dropped and the project is DOS-only, named hibr-boxer.** The text below was written for both engines; wherever it says ScummVM, read it as history. The gamebox keeps an `engine` field so a second core can return as an additive package.
 
-## Where it stands (2026-10-31)
+## Where it stands (2026-11-01)
 
 This document was written as a sketch on 2026-10-20, before anything existed. What follows is how it
 turned out; where it and the sketch below disagree, **this section wins**. [CHANGELOG.md](../CHANGELOG.md)
@@ -27,8 +27,21 @@ has it version by version and the [README](../README.md) is the manual.
 - **Speed.** DOS games never sleep, so an emulator left to run flat out spends a core on their waiting
   loops. A Speed Limit by era (Pentium 100 by default) caps it; Boxer's own drawing costs 6 to 13% of a
   core at 70 frames a second (measured on an i3-N300). See the README.
-- **Box art**: Find Cover shows the candidates and lets you choose; automatic fetching is matched against the libretro thumbnails list with rules that prefer no cover to a wrong
-  one, and falls back to a title screen; fetching is a background job and is off until switched on.
+- **Box art**: Find Cover shows the candidates and lets you choose; automatic fetching is matched against
+  the libretro thumbnails list with rules that prefer no cover to a wrong one, and falls back to a title
+  screen; fetching is a background job and is off until switched on. When the project has nothing right,
+  Find Cover's **Search the web** opens the hibr Browser at a search made from a template (`BX_SEARCH`,
+  `{name} box cover` to begin with) on the person's engine (`BX_ENGINE`, DuckDuckGo images to begin with);
+  the Browser's "Use as cover for a game..." then calls `bx_setcover` (JPEGs saved as PNG by hibr's `img save`).
+  Nothing is scraped from the engine: Boxer only opens a link.
+- **Closing.** DOS ends with the game: the generated autoexec has `exit` after the program (Close When Game
+  Ends on; not for installers), and `dosbox_pure_menu_time=0` lets `exit` end the core.
+- **Pointer lock safety.** Boxer asks for the lock only from a click-capture in the current run (a window's
+  capture state starts off, restored windows included), gives it back on game end and close, and does not
+  re-ask after a full-screen change. Boxer writes no escape sequences itself: the release to the terminal is
+  hibr's (`dt_ptrunlock`).
+- **Full screen** is the desktop's own; Boxer fills the pane behind the picture with a chosen colour (Full
+  Screen Border), because a see-through theme blended the desktop's face-coloured cells with the wallpaper.
 - **Not done:** Homebrew and AUR packages (only the deb exists); another emulator (DOSBox-X for
   Windows 9x or PC-98 would be a second core, and an ADR); save states and rewind; a real game on
   every machine we claim (the suite runs a test game and a stand-in terminal; the owner has tried it
