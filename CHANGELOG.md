@@ -4,6 +4,11 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## hibr-retro 0.1.8 (Nov 3)
+- Rebuilt against hibr 0.99.430, whose module ABI is 17 (a module built for 16 is refused at load). No change to
+  the module's behaviour. Needs hibr 0.99.430 or newer; hibr's own package declares that it breaks an older
+  hibr-retro, so apt upgrades them together.
+
 ## Boxer 1.34 (Nov 1)
 - **DOS goes when the game does.** The game's program was started and DOS was left at its prompt when it ended,
   so the window stayed up with nothing in it until someone typed EXIT. With Close When Game Ends on (the

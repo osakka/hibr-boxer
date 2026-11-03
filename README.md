@@ -18,7 +18,7 @@ sudo apt install hibr-retro            # the retro module and DOSBox Pure, from 
 ```
 
 then, in the hibr desktop, install **Boxer** from the catalogue (it is in Games, and brings its own
-Control Panel pane), and Restart Desktop. `hibr-retro` needs hibr 0.99.365 or newer; what each
+Control Panel pane), and Restart Desktop. `hibr-retro` 0.1.8 needs hibr 0.99.430 or newer (a module is built for one hibr ABI), and Boxer needs 0.99.365 or newer; what each
 feature needs is in the table at the end of "Playing".
 
 ## Playing
@@ -95,7 +95,7 @@ which DOSBox Pure plays through; **MIDI Output** chooses one, for every game or 
 
 | feature | needs |
 |---|---|
-| the player, import, Get Info, speed limit | hibr 0.99.365 with `hibr-retro` 0.1.7 |
+| the player, import, Get Info, speed limit | hibr 0.99.365 with `hibr-retro` 0.1.7, or hibr 0.99.430 with `hibr-retro` 0.1.8 |
 | a cover shown in Files | hibr 0.99.281 |
 | hover, and the pointer to the pixel | hibr 0.99.304; Blit, kitty or foot |
 | pointer hiding while captured | hibr 0.99.311; Blit 0.2.8 |
