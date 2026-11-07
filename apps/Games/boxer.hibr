@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.37
+app boxer "DOS games, one folder to a game" 1.38
 # modules: img retro fetch
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -221,27 +221,20 @@ fn bc_list(set = boxarts) {
 	ret "$lst"
 }
 
-# One download, to a file, from a server over https (http only when the place
-# to fetch from was named by hand), no bigger than max bytes.
+# One download, to a file, with hibr's own fetch, from a server over https (http only when the place to fetch from was
+# named by hand), no bigger than max bytes.
 fn bc_get(url, out, int max) {
-	local pr='=https'
-
-	[ -n "${BX_ART_URL-}" ] && pr='=http,https'
 	case $url in
 	https://*) ;;
 	http://*) [ -n "${BX_ART_URL-}" ] || return 1 ;;
 	*) return 1 ;;
 	esac
-	if need fetch 2> /dev/null; then
-		if fetch "$url" -o "$out" -t 30 > /dev/null 2>&1; then
-			if [ "$(stat -c %s "$out" 2> /dev/null || echo 0)" -le "$max" ]; then
-				return 0
-			fi
-		fi
-		command rm -f -- "$out"
+	need fetch 2> /dev/null || return 1
+	if fetch "$url" -o "$out" -t 30 > /dev/null 2>&1 && [ "$(stat -c %s "$out" 2> /dev/null || echo 0)" -le "$max" ]; then
+		return 0
 	fi
-	command -v curl > /dev/null || return 1
-	curl -fsSL --proto "$pr" --proto-redir "$pr" --max-time 30 --max-filesize "$max" -o "$out" -- "$url" 2> /dev/null
+	command rm -f -- "$out"
+	return 1
 }
 
 # The awk both the strict matcher and the loose search are written in, as one text (no single quote in it, so it

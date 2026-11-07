@@ -14,7 +14,7 @@ CORE = ROOT + "/build/testcore.so"
 RETRO = ROOT + "/build/retro.so"
 DESK = HIBR_TREE + "/programs/desktop/desktop.hibr"
 ENVBASE = {"XDG_RUNTIME_DIR": D, "HIBR_RETRO_AUDIO": "none", "BP_CORE": CORE,
-           "BP_SYS": D + "/sys", "BX_CAPTURE": "seamless", "BX_CONFIRM": "off", "BX_MOUSE": "direct", "BX_MOUSEV": "2", "HIBR_MODPATH": ROOT + "/build", "XDG_CACHE_HOME": D + "/cache"}
+           "BP_SYS": D + "/sys", "BX_CAPTURE": "seamless", "BX_CONFIRM": "off", "BX_MOUSE": "direct", "BX_MOUSEV": "2", "HIBR_MODPATH": ROOT + "/build:/usr/lib/hibr", "XDG_CACHE_HOME": D + "/cache"}
 
 
 def gamebox(name="Test Game"):

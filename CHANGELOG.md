@@ -4,6 +4,11 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## Boxer 1.38 (Nov 7)
+- **No `curl` at all.** Downloads (the covers and the lists of names) use hibr's own `fetch` only; the `curl`
+  fallback, which only ever hid a `fetch` that had failed, is gone. Without the `fetch` module a download fails
+  and Find Cover says it could not get the list.
+
 ## Boxer 1.37 (Nov 7)
 - Fixes 1.36 on a terminal that cannot report key releases: hibr says `press` for every key there, which 1.36 took
   for "releases are on" and so left such a key down in the game. Releases are now used only for the window the
