@@ -33,7 +33,7 @@
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.38
+app boxerplay "A DOS game from a gamebox" 0.39
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -905,6 +905,8 @@ fn boxerplay_fullscreen(int id, on) {
 fn boxerplay_key(int id, key) {
 	local p=${BP[$id]["p"]} ph=${DT_KEYPHASE-}
 
+	# DT_KEYPHASE says press all the time; the window has releases only while the desktop names it DT_PHASEWIN.
+	[ "${DT_PHASEWIN-}" = "$id" ] || ph=
 	case $ph in press | repeat | release) ;; *) ph= ;; esac
 	if [ -n "${BP[$id]["choose"]-}" ]; then
 		[ "$ph" = release ] || bp_choosekey "$id" "$key"

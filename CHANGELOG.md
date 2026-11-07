@@ -4,6 +4,11 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## Boxer 1.37 (Nov 7)
+- Fixes 1.36 on a terminal that cannot report key releases: hibr says `press` for every key there, which 1.36 took
+  for "releases are on" and so left such a key down in the game. Releases are now used only for the window the
+  desktop names as having them (`DT_PHASEWIN`); otherwise a press is held for Key Held ms, as before.
+
 ## Boxer 1.36, hibr-retro 0.1.9 (Nov 7)
 - **Real key releases** (hibr 0.99.466, a terminal that reports them: Blit 0.3.61). A key is down in the game for
   as long as it is held, so two keys at once work, lifting one while holding another is right, and Shift, Ctrl

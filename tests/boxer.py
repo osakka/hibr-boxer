@@ -324,7 +324,7 @@ def keysdown_after(body):
     return struct.unpack("<Q", d[8:16])[0] if len(d) >= 16 else -1
 
 
-ph = lambda phase, key, code=0, base=0: 'DT_KEYPHASE=%s DT_KEYCODE=%d DT_KEYBASE=%d DT_KEYMODS=0; boxerplay_key "$BID" %s' % (phase, code, base, key)
+ph = lambda phase, key, code=0, base=0: 'DT_PHASEWIN="$BID"; DT_KEYPHASE=%s DT_KEYCODE=%d DT_KEYBASE=%d DT_KEYMODS=0; boxerplay_key "$BID" %s' % (phase, code, base, key)
 n2 = keysdown_after(ph("press", "left") + "\n" + ph("press", "right"))
 check("with key releases two keys pressed are two keys down, still down after the hold time", n2 == 2, n2)
 check("lifting one of them leaves the other down",
@@ -333,8 +333,8 @@ check("a letter goes by its code, and a lone modifier is a key of its own",
       keysdown_after(ph("press", "A", 97, 97) + "\n" + ph("press", "left-shift", 57441)) == 2, "")
 check("a repeat is not a second press, and a release lets the key go",
       keysdown_after(ph("press", "left") + "\n" + ph("repeat", "left") + "\n" + ph("release", "left")) == 0, "")
-check("without key releases a press is held for the hold time and then let go",
-      keysdown_after('DT_KEYPHASE=; boxerplay_key "$BID" left') == 0, "")
+check("without key releases (the desktop says press all the time, and names no window for phases) a press is held for the hold time and then let go",
+      keysdown_after('DT_PHASEWIN=; DT_KEYPHASE=press; boxerplay_key "$BID" left') == 0, "")
 
 # Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
 for conf in ("on", "off"):
