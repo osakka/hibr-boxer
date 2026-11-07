@@ -10,6 +10,23 @@ import screen as sx
 from screen import Term, check, report, load
 
 D = tempfile.mkdtemp(prefix="hibr-boxer-")
+
+
+def _scrub(d=D, pid=os.getpid()):
+    """Whatever this run left in /tmp, however it ended: its folder and its scratch scripts."""
+    import glob
+    if os.getpid() != pid:
+        return
+    shutil.rmtree(d, True)
+    for f in glob.glob("/tmp/hibr-boxer*-%d.hibr" % pid):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+
+import atexit
+atexit.register(_scrub)
 CORE = ROOT + "/build/testcore.so"
 RETRO = ROOT + "/build/retro.so"
 DESK = HIBR_TREE + "/programs/desktop/desktop.hibr"
@@ -297,7 +314,7 @@ if 'DT_KEYS["fullscreen"]' in open(HIBR_TREE + "/programs/desktop/wm/settings.hi
         t.close()
 
 # Control Panel > Boxer > Full Screen Border: a window of coloured blocks; the arrows and Enter, or a click, choose.
-cpscript = sx.scratch("colour.hibr")
+cpscript = sx.scratch("boxer-colour.hibr")
 open(cpscript, "w").write("%s. %s\n. %s/system/panel.hibr\n. %s/control-panel/boxerset.hibr\nfn cp_save() { echo \"$BX_BORDER\" > %s/border.txt; }\n"
                           "dt_open\nBX_BORDER='#111111'\nbxs_colours\ndt_run\ndt_close\n" % (load("console"), DESK, HIBR_TREE + "/programs/desktop", ROOT, D))
 t = Term(cpscript, rows=26, cols=82, settle=1.0, env=ENVBASE)
