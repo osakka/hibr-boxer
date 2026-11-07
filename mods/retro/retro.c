@@ -409,12 +409,80 @@ double rt_cell(const char *s)
 	return strchr(s, '.') ? v : v + 0.5;
 }
 
+/*
+ * A key by what a terminal that reports key releases says: spec is the key's kitty code (97 for a, 13 for Enter,
+ * 57441 for the left shift) or, for the keys a terminal sends in their legacy form, a name (left, f5,
+ * left-shift). No modifier is pressed for the key: the modifiers are keys of their own, down and up as the
+ * person holds them. mods is kitty's bits (shift 1, alt 2, ctrl 4). A key the core has no name for is ignored.
+ */
+int rt_rawkey(const char *spec, unsigned kmods, unsigned *code, uint32_t *chr, unsigned *mods)
+{
+	static const struct { const char *n; unsigned c; } lone[] = {
+		{ "left-shift", RETROK_LSHIFT }, { "right-shift", RETROK_RSHIFT }, { "left-ctrl", RETROK_LCTRL },
+		{ "right-ctrl", RETROK_RCTRL }, { "left-alt", RETROK_LALT }, { "right-alt", RETROK_RALT }, { 0, 0 }
+	};
+	char *e;
+	unsigned long k;
+	unsigned dummy;
+	uint32_t c2;
+	int i;
+
+	*code = RETROK_UNKNOWN;
+	*chr = 0;
+	*mods = (kmods & 1 ? RETROKMOD_SHIFT : 0) | (kmods & 2 ? RETROKMOD_ALT : 0) | (kmods & 4 ? RETROKMOD_CTRL : 0);
+	for (i = 0; lone[i].n; i++)
+		if (!strcmp(spec, lone[i].n)) {
+			*code = lone[i].c;
+			return 0;
+		}
+	k = strtoul(spec, &e, 10);
+	if (*spec && !*e) {
+		if (k >= 32 && k < 127) {
+			*code = (unsigned)k;
+			*chr = (uint32_t)k;
+			if (isalpha((int)k) && (kmods & 1))
+				*chr = (uint32_t)toupper((int)k);
+		} else if (k == 13) {
+			*code = RETROK_RETURN;
+		} else if (k == 9) {
+			*code = RETROK_TAB;
+		} else if (k == 27) {
+			*code = RETROK_ESCAPE;
+		} else if (k == 127) {
+			*code = RETROK_BACKSPACE;
+		} else if (k == 57441) {
+			*code = RETROK_LSHIFT;
+		} else if (k == 57442) {
+			*code = RETROK_LCTRL;
+		} else if (k == 57443) {
+			*code = RETROK_LALT;
+		} else if (k == 57447) {
+			*code = RETROK_RSHIFT;
+		} else if (k == 57448) {
+			*code = RETROK_RCTRL;
+		} else if (k == 57449) {
+			*code = RETROK_RALT;
+		} else if (k >= 57399 && k <= 57408) {
+			*code = RETROK_KP0 + (unsigned)(k - 57399);
+		} else if (k == 57414) {
+			*code = RETROK_KP_ENTER;
+		} else {
+			return -1;
+		}
+		return 0;
+	}
+	if (rt_keymap(spec, code, &c2, &dummy) < 0)
+		return -1;
+	*chr = c2;
+	return 0;
+}
+
 /* The usage line. */
 void rt_usage(void)
 {
 	lg(HIBR_LERR, "usage: retro open core [game] [-s sysdir] [-S savedir] [-o key=value]... | list | "
 		      "close id|all | fd|wake|frame|info|pause|play|toggle|reset id | size id cols rows [pixels|half] | "
-		      "aspect id 4:3|auto|ratio | draw id row col [-p pane] | key id name [down|up|tap] | "
+		      "aspect id 4:3|auto|ratio | draw id row col [-p pane] | key id name [down|up|tap] | keyraw id spec down|up [mods] | "
 		      "hold id ms | mouse id row col buttons [wheel] | motion id dx dy buttons [wheel] | pad id mask | option id key value | "
 		      "save id file | load id file");
 }
@@ -606,6 +674,20 @@ int m_retro(sh *s, int ac, char **av)
 			else
 				rl_hold(p->r, code, chr, mods, p->hold);
 		}
+		return HIBR_OK;
+	}
+	if (!strcmp(sub, "keyraw")) {
+		unsigned km = ac > 5 ? (unsigned)atoi(av[5]) : 0;
+
+		if (ac < 5 || (strcmp(av[4], "down") && strcmp(av[4], "up"))) {
+			rt_usage();
+			return 2;
+		}
+		if (rt_rawkey(av[3], km, &code, &chr, &mods) < 0) {
+			lg(HIBR_LERR, "retro keyraw: no such key: %s", av[3]);
+			return 1;
+		}
+		rl_key(p->r, code, chr, mods, !strcmp(av[4], "down"));
 		return HIBR_OK;
 	}
 	if (!strcmp(sub, "mouse")) {

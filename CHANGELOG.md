@@ -4,6 +4,13 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## Boxer 1.36, hibr-retro 0.1.9 (Nov 7)
+- **Real key releases** (hibr 0.99.466, a terminal that reports them: Blit 0.3.61). A key is down in the game for
+  as long as it is held, so two keys at once work, lifting one while holding another is right, and Shift, Ctrl
+  and Alt are keys of their own. Where releases are not reported a press is still held for Key Held ms. The
+  module has `retro keyraw ID SPEC down|up [MODS]` for it (0.1.9); an older module is noticed and presses are held.
+- Boxer 1.35 (hibr, Nov 7): the game window reads full screen from the desktop's own `_fullscreen` callback.
+
 ## hibr-retro 0.1.8 (Nov 3)
 - Rebuilt against hibr 0.99.430, whose module ABI is 17 (a module built for 16 is refused at load). No change to
   the module's behaviour. Needs hibr 0.99.430 or newer; hibr's own package declares that it breaks an older

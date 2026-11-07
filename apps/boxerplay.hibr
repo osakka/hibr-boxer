@@ -25,13 +25,15 @@
 # or pixel it is over. Alt+Enter asks the desktop for the whole display
 # (dt_fullscreen, #405), else makes the window as large as it can be.
 #
-# What a terminal cannot do: a key's release (the console reports presses
-# only, so a key is held for a short time after each press; hibr #315).
+# A key's release: where the desktop and the terminal report them (hibr
+# 0.99.466, Blit 0.3.61) a key is down in the core until it is let go; where
+# they report presses only, a key is held for Key Held ms after each press
+# (hibr #315).
 
 strict
 
 
-app boxerplay "A DOS game from a gamebox" 0.37
+app boxerplay "A DOS game from a gamebox" 0.38
 # modules: retro
 command -v dt_app > /dev/null &&
 	dt_app boxerplay "Boxer Game" 26 90 many "▣" "" hidden
@@ -641,6 +643,8 @@ fn bp_start(int id) {
 		}
 	retro aspect "${BP[$id]["p"]}" "${BP[$id]["aspect"]}" 2> /dev/null
 	retro hold "${BP[$id]["p"]}" "$BX_HOLD" 2> /dev/null
+	# Real key releases where the desktop and the terminal can (hibr 0.99.466); the request stands until the terminal answers.
+	dt_has dt_keyphases && dt_keyphases "$id" on
 	BP[$id]["fd"] := retro fd "${BP[$id]["p"]}"
 	snd := retro info "${BP[$id]["p"]}"
 	if [ "$BX_SOUND" = on ] && [ "${snd[output]-}" = none ]; then
@@ -895,14 +899,23 @@ fn boxerplay_fullscreen(int id, on) {
 	return 0
 }
 
+# A key, as the terminal says it: with real releases (hibr 0.99.466 and a terminal that reports them, Blit 0.3.61)
+# every press goes down in the core and stays down until its release; two keys held at once are two keys down, and a
+# modifier is a key of its own. Without them the desktop reports presses only, and a press is held for Key Held ms.
 fn boxerplay_key(int id, key) {
-	local p=${BP[$id]["p"]}
+	local p=${BP[$id]["p"]} ph=${DT_KEYPHASE-}
 
+	case $ph in press | repeat | release) ;; *) ph= ;; esac
 	if [ -n "${BP[$id]["choose"]-}" ]; then
-		bp_choosekey "$id" "$key"
+		[ "$ph" = release ] || bp_choosekey "$id" "$key"
 		return 0
 	fi
 	[ -n "$p" ] || return 1
+	if [ "$ph" = release ]; then
+		bp_rawkey "$id" "$key" up
+		return 0
+	fi
+	[ "$ph" = repeat ] && return 0
 	if [ "$key" = "${BX_RELKEY-f12}" ] && [ "${BP[$id]["cap"]-}" = 1 ]; then
 		bp_capture "$id" 0
 		return 0
@@ -911,7 +924,31 @@ fn boxerplay_key(int id, key) {
 	   dt_keyassigned "$key"; then
 		return 1
 	fi
+	if [ -n "$ph" ] && [ -z "${BP[$id]["noraw"]-}" ]; then
+		bp_rawkey "$id" "$key" down
+		return 0
+	fi
 	retro key "$p" "$key" 2> /dev/null
+	return 0
+}
+
+# One key down or up in the core, from the code the terminal gave (the key's own on a US layout when it said, so a
+# shifted letter is the letter's key), else the name for the keys it sends in their legacy form. A core module with
+# no keyraw (hibr-retro before 0.1.9) goes back to holding presses.
+fn bp_rawkey(int id, key, phase) {
+	local p=${BP[$id]["p"]} spec=$key st
+
+	if [ "${DT_KEYBASE:-0}" -gt 0 ] 2> /dev/null; then
+		spec=$DT_KEYBASE
+	elif [ "${DT_KEYCODE:-0}" -gt 0 ] 2> /dev/null; then
+		spec=$DT_KEYCODE
+	fi
+	retro keyraw "$p" "$spec" "$phase" "${DT_KEYMODS:-0}" 2> /dev/null && return 0
+	st=$?
+	if [ "$st" = 2 ]; then
+		BP[$id]["noraw"]=1
+		[ "$phase" = down ] && retro key "$p" "$key" 2> /dev/null
+	fi
 	return 0
 }
 

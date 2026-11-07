@@ -74,6 +74,15 @@ A 4:3 game on a wider display gets bars at the sides, filled with a colour of yo
 Border** (Control Panel > Boxer) opens a window of coloured blocks, black to begin with. It is a solid
 colour, so the wallpaper does not show through however see-through the windows are.
 
+### Keys
+
+Where the desktop and the terminal report key releases (hibr 0.99.466 and Blit 0.3.61), every key is down in
+the game for as long as you hold it: two keys at once are two keys down (an arrow and Ctrl, say), lifting one
+leaves the other, and Shift, Ctrl and Alt are keys of their own. Where they report presses only, a press is
+held for **Key Held** ms (Control Panel > Boxer) and then let go, which cannot do any of that. Boxer asks for
+the releases itself; `hibr-retro` 0.1.9 is needed for them (an older one holds presses, as before). The
+desktop's own keys (Alt+Enter, Release Pointer) are still its own.
+
 ### Speed
 
 DOS games never sleep: they loop, waiting for the next frame. An emulator left to run as fast as it
@@ -100,6 +109,7 @@ which DOSBox Pure plays through; **MIDI Output** chooses one, for every game or 
 | hover, and the pointer to the pixel | hibr 0.99.304; Blit, kitty or foot |
 | pointer hiding while captured | hibr 0.99.311; Blit 0.2.8 |
 | pointer lock | hibr 0.99.365 and `hibr-retro` 0.1.6; Blit 0.2.42; Restart Desktop after upgrading |
+| key down and key up (two keys at once) | hibr 0.99.466, `hibr-retro` 0.1.9, a terminal that reports releases (Blit 0.3.61) |
 | full screen (the desktop's Full Screen key) | hibr 0.99.403; 0.99.392 for two displays |
 | Find Cover's Search the web, and Use as cover for a game | the Browser (2.21 for the cover row); JPEGs need hibr 0.99.404 |
 

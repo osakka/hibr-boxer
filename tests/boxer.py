@@ -310,6 +310,32 @@ got = open(D + "/border.txt").read().strip() if os.path.exists(D + "/border.txt"
 check("the arrows and Enter choose a colour and keep it (two right and one down from the second block)", got == "#1a1a40", got)
 t.close()
 
+# Real key releases, played here by setting what the desktop sets for a key (hibr 0.99.466): two keys pressed are two keys
+# down and stay down past the hold time; lifting one leaves the other; a press-only terminal still holds a press for a moment.
+def keysdown_after(body):
+    f = os.path.join(D, "kd.bin")
+    if os.path.exists(f):
+        os.remove(f)
+    t = desk('sleep 1.0\n' + body + '\nsleep 0.4\nretro save "${BP[$BID]["p"]}" %s' % f, box, env={"BX_HOLD": "60"})
+    t.collect(3.5)
+    t.close()
+    import struct
+    d = open(f, "rb").read() if os.path.exists(f) else b""
+    return struct.unpack("<Q", d[8:16])[0] if len(d) >= 16 else -1
+
+
+ph = lambda phase, key, code=0, base=0: 'DT_KEYPHASE=%s DT_KEYCODE=%d DT_KEYBASE=%d DT_KEYMODS=0; boxerplay_key "$BID" %s' % (phase, code, base, key)
+n2 = keysdown_after(ph("press", "left") + "\n" + ph("press", "right"))
+check("with key releases two keys pressed are two keys down, still down after the hold time", n2 == 2, n2)
+check("lifting one of them leaves the other down",
+      keysdown_after(ph("press", "left") + "\n" + ph("press", "right") + "\n" + ph("release", "left")) == 1, "")
+check("a letter goes by its code, and a lone modifier is a key of its own",
+      keysdown_after(ph("press", "A", 97, 97) + "\n" + ph("press", "left-shift", 57441)) == 2, "")
+check("a repeat is not a second press, and a release lets the key go",
+      keysdown_after(ph("press", "left") + "\n" + ph("repeat", "left") + "\n" + ph("release", "left")) == 0, "")
+check("without key releases a press is held for the hold time and then let go",
+      keysdown_after('DT_KEYPHASE=; boxerplay_key "$BID" left') == 0, "")
+
 # Closing a playing game asks first (Confirm On Exit), and a game that ends closes its window (Close When Game Ends).
 for conf in ("on", "off"):
     t = desk('sleep 1\ndt_closereq "$BID"\nsleep 0.2\necho "[${BP[$BID]["name"]-gone}]" > %s/closed.%s' % (D, conf), box, env={"BX_CONFIRM": conf})

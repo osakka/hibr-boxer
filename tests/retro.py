@@ -106,6 +106,23 @@ check(keys_down("left") == 1, "a plain key is one key down: %d" % keys_down("lef
 check(keys_down("shift-left") == 2, "shift-left is two: %d" % keys_down("shift-left"))
 check(keys_down("A") == 2, "a capital is two: %d" % keys_down("A"))
 check(keys_down("ctrl-left") == 2, "ctrl-left is two: %d" % keys_down("ctrl-left"))
+# Real key releases (keyraw): two keys held at once are two keys down, lifting one leaves the other, a lone modifier is a
+# key, and nothing is let go by itself (a plain `key` is held for hold ms and then released).
+def raw_down(script):
+    f = tempfile.mktemp()
+    rc, out, err = shell("need retro; id := retro open %s; %s; sleep 0.25; retro save $id %s; retro close $id" % (CORE, script, f))
+    d = open(f, "rb").read() if os.path.exists(f) else b""
+    return struct.unpack("<Q", d[8:16])[0] if len(d) >= 16 else -1
+
+
+check(raw_down("retro hold $id 50; retro keyraw $id left down; retro keyraw $id right down; sleep 0.3") == 2, "two keys held at once are two keys down, and not let go after the hold time")
+check(raw_down("retro keyraw $id left down; retro keyraw $id right down; retro keyraw $id left up") == 1, "lifting one of two leaves the other down")
+check(raw_down("retro keyraw $id 97 down; retro keyraw $id 57441 down") == 2, "a kitty code and a lone modifier are keys of their own")
+check(raw_down("retro keyraw $id 97 down; retro keyraw $id 97 up") == 0, "a release lets the key go")
+check(raw_down("retro keyraw $id 97 down 4") == 1, "the modifier bits press no key of their own")
+rc, out, err = shell("need retro; id := retro open %s; retro keyraw $id nosuch down; echo $?; retro keyraw $id 99999 down; echo $?; "
+                     "retro keyraw $id left sideways; echo $?; retro close $id" % CORE)
+check(out.split() == ["1", "1", "2"], "a key with no name is refused, as is a phase that is neither down nor up: %r" % out)
 # A click is given in the pane's own cells, as an app is told it, wherever the pane is on the screen: the centre of
 # the picture is the centre of the core's range whether the pane is at the corner or in the middle of the screen,
 # and a click a quarter of the way across is a quarter of the way across.
