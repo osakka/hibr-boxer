@@ -104,7 +104,8 @@ which DOSBox Pure plays through; **MIDI Output** chooses one, for every game or 
 
 | feature | needs |
 |---|---|
-| the player, import, Get Info, speed limit | hibr 0.99.365 with `hibr-retro` 0.1.7, or hibr 0.99.430 with `hibr-retro` 0.1.8 |
+| the player, import, Get Info, speed limit | hibr 0.99.365 with `hibr-retro` 0.1.7, or hibr 0.99.430 with `hibr-retro` 0.1.8 or newer |
+| Boxer itself (covers saved with `img save`) | hibr 0.99.404 |
 | a cover shown in Files | hibr 0.99.281 |
 | hover, and the pointer to the pixel | hibr 0.99.304; Blit, kitty or foot |
 | pointer hiding while captured | hibr 0.99.311; Blit 0.2.8 |
@@ -159,6 +160,21 @@ one, `boxer.hibr covers` fills in the shelf (and swaps a title screen for box ar
   instead, for a caller that cannot read printed output) and `bx_setcover BOX PICTURE` makes a picture a
   game's cover: a PNG as it is, anything else saved as a PNG first by `img save` (hibr 0.99.404) where hibr has it,
   else refused (status 1). Check `dt_has bx_setcover` first.
+
+## What Boxer calls outside hibr
+
+Boxer is written in hibr and uses hibr's own modules wherever there is one: `fetch` for every download, `img` for
+every picture (its size, and saving a JPEG as a PNG), `archive` for tarballs, `json`, `match` and `rsub` for text.
+The cover matcher is hibr script too (no awk). What is left is a program on the machine, asked for where it is
+wanted and named in a message when it is missing, the way hibr's own Files does it:
+
+| for | program | why not hibr's own |
+|---|---|---|
+| a zip | `unzip` | hibr's `archive` reads tar and tar.gz, not zip |
+| a `.tar.xz` or `.tar.bz2`, or a tarball hibr's `archive` refuses (one with a plain `./` entry) | `tar` | same |
+| inside a disc image (`.iso`, `.cue`) and building one for an installer | `xorriso`, `7z` or `bsdtar` | hibr has nothing that reads a disc image |
+| telling a DOS program from a Windows one (an .EXE's header) | `od` | nothing in hibr reads bytes |
+| files and folders | `cp`, `find`, `ls`, `stat`, `chmod`, `ln`, `mktemp`, `grep`, `sort`, `head` | the operating system's own |
 
 ## What it runs on
 

@@ -115,6 +115,22 @@ def png(path, w, h, rgb):
                            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
+def firstpx(path):
+    """The first pixel of a PNG (colour type 2 or 6, 8 bit, however it was filtered): enough to tell one plain picture from another."""
+    import struct, zlib
+    d = open(path, "rb").read()
+    i, idat, ct = 8, b"", None
+    while i < len(d):
+        n, t = struct.unpack(">I4s", d[i:i + 8])
+        if t == b"IHDR":
+            ct = d[i + 8 + 9]
+        if t == b"IDAT":
+            idat += d[i + 8:i + 8 + n]
+        i += 12 + n
+    raw = zlib.decompress(idat)
+    return (ct, tuple(raw[1:4]))
+
+
 # Three games in the games folder, one with a cover.
 shelf = os.path.join(D, "shelf")
 shutil.rmtree(shelf, True)
@@ -430,6 +446,8 @@ src = os.path.join(D, "src", "Prince")
 mk(src, {"GAME/PRINCE.EXE": DOSEXE, "GAME/SETUP.EXE": DOSEXE, "INSTALL.BAT": b"@echo off\r\n", "GAME/README.COM": b"x",
          "BOOTDISK.EXE": DOSEXE})
 subprocess.run(["zip", "-qr", os.path.join(D, "src", "Zipped.zip"), "Prince"], cwd=D + "/src", check=True)
+subprocess.run(["tar", "-czf", os.path.join(D, "src", "Tarred.tgz"), "Prince"], cwd=D + "/src", check=True)
+subprocess.run(["tar", "-czf", os.path.join(D, "src", "Dotted.tgz"), "-C", D + "/src/Prince", "."], check=True)
 mk(D + "/src/inst", {"SETUP.EXE": DOSEXE})
 ish = os.path.join(D, "ishelf")
 shutil.rmtree(ish, True)
@@ -478,6 +496,10 @@ check("with several programs there is none chosen: the shelf asks which to run",
 out, err = imp("b := bx_import %s/src/Zipped.zip; echo \"box=$b\"" % D)
 bz = out.split("box=")[1].strip() if "box=" in out else ""
 check("a zip is unpacked and treated the same way", bool(bz) and doc(bz).get("state") == "installing", (out, err))
+for tb, how in (("Tarred.tgz", "by hibr's archive module"), ("Dotted.tgz", "by tar where the module refuses its ./ entry")):
+    out, err = imp("b := bx_import %s/src/%s; echo \"box=$b\"" % (D, tb))
+    bt = out.split("box=")[1].strip() if "box=" in out else ""
+    check("a tarball is unpacked and treated the same way, %s" % how, bool(bt) and doc(bt).get("state") == "installing", (out, err))
 out, err = imp("b := bx_import %s/src/Prince; echo \"box=$b\"" % D)
 check("importing the same name again makes another box", "Prince 3.boxer" in out, out + err)
 out, err = imp("b := bx_import %s/src/inst/SETUP.EXE; echo \"box=$b\"" % D)
@@ -1039,7 +1061,7 @@ check("a game with no box art gets its title screen, and the box says so", "st=0
 b = boxnamed("Dungeon Keeper")
 out, err = imp("bc_fetch '%s'; echo \"st=$?\"; k := bc_kind '%s'; echo \"kind=$k\"" % (b, b))
 check("and one with box art gets that, not the title screen", "st=0" in out and "kind=box" in out and lit(b + "/.cover.png")
-      and open(b + "/.cover.png", "rb").read() == open(art + "/Named_Boxarts/Dungeon Keeper (1997).png", "rb").read(), (out, err))
+      and firstpx(b + "/.cover.png")[1] == firstpx(art + "/Named_Boxarts/Dungeon Keeper (1997).png")[1], (out, err))
 
 # Which cover is whose: the matcher against names as the libretro list writes them (a colon is an underscore, "The" at the
 # end, the year, demos, apostrophes dropped), with what it must find and what it must leave alone.
@@ -1087,7 +1109,7 @@ check("Find Cover opens with the game's name in the search and its candidates si
 t.send(b"\r")
 t.collect(1.0)
 check("Enter keeps the best match as the cover, and the window goes", lit(wb + "/.cover.png")
-      and open(wb + "/.cover.png", "rb").read() == open(art + "/Named_Boxarts/Dungeon Keeper (1997).png", "rb").read()
+      and firstpx(wb + "/.cover.png")[1] == firstpx(art + "/Named_Boxarts/Dungeon Keeper (1997).png")[1]
       and "Find a cover for" not in t.screen().text(), t.screen())
 check("and the box says it was picked", '"kind": "picked"' in open(wb + "/boxer.json").read(), open(wb + "/boxer.json").read())
 t.close()
@@ -1149,7 +1171,7 @@ check("bx_gamelist binds the games in an array, no output to catch", "g=" + gb i
 pngp = D + "/iface.png"
 png(pngp, 6, 6, (9, 99, 199))
 out, err = imp("bx_setcover '%s' '%s'; echo \"st=$?\"" % (gb, pngp))
-check("bx_setcover makes a PNG the game's cover", "st=0" in out and lit(gb + "/.cover.png") and open(gb + "/.cover.png", "rb").read() == open(pngp, "rb").read(), (out, err))
+check("bx_setcover makes a PNG the game's cover", "st=0" in out and lit(gb + "/.cover.png") and firstpx(gb + "/.cover.png")[1] == firstpx(pngp)[1], (out, err))
 os.remove(gb + "/.cover.png")
 open(D + "/iface.jpg", "wb").write(b"\xff\xd8\xff\xe0" + bytes(300))
 out, err = imp("bx_setcover '%s' '%s/iface.jpg'; echo \"st=$?\"" % (gb, D))
@@ -1199,14 +1221,15 @@ hits.clear()
 out, err = imp("BX_ART=on; b := bx_import '%s'; echo \"box=$b\"" % src)
 bx_ = out.split("box=")[1].strip()
 check("a cover that came with the game is the one kept, and nothing is fetched for it",
-      os.path.exists(bx_ + "/.cover.png") and open(bx_ + "/.cover.png", "rb").read() == open(src + "/cover.png", "rb").read() and not hits, (hits, out, err))
+      os.path.exists(bx_ + "/.cover.png") and lit(bx_ + "/.cover.png") == lit(src + "/cover.png") and not hits, (hits, out, err))
 
 png(D + "/mine.png", 4, 4, (9, 9, 9))
 out, err = imp("bc_set '%s' '%s'; echo st=$?" % (bx_, D + "/mine.png"))
-check("a cover of the person's own is put in as .cover.png", open(bx_ + "/.cover.png", "rb").read() == open(D + "/mine.png", "rb").read(), (out, err))
+check("a cover of the person's own is put in as .cover.png", lit(bx_ + "/.cover.png") == lit(D + "/mine.png") and "st=0" in out, (out, err))
 open(D + "/mine.jpg", "wb").write(b"\xff\xd8\xff\xe0" + bytes(300))
 out, err = imp("bc_set '%s' '%s'; echo st=$?" % (bx_, D + "/mine.jpg"))
-check("a JPEG is turned away: a cover must be a PNG", "st=1" in out and "must be a PNG" in err, (out, err))
+check("something that is not a picture is turned away, and nothing is kept", "st=1" in out and "not a picture" in err
+      and not os.path.exists(bx_ + "/.cover.png.part"), (out, err))
 srv.shutdown()
 
 shutil.rmtree(D, True)

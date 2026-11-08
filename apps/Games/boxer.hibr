@@ -17,8 +17,8 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.38
-# modules: img retro fetch
+app boxer "DOS games, one folder to a game" 1.39
+# modules: img retro fetch archive
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
 command -v dt_app > /dev/null && dt_app boxer "Boxer" 21 72 "" "▣" fixed
@@ -194,30 +194,49 @@ fn bc_url(set = boxarts) {
 	ret "$u"
 }
 
-# The server's list of covers in a set as a file of "name<TAB>encoded name"
-# lines, made when there is none or the one there is over a month old.
+# The server's list of covers in a set as a file of "name<TAB>encoded name<TAB>name as the matcher reads it"
+# lines, made when there is none or the one there is over a month old (or one from before the third column). A list
+# that cannot be got again is used as it is, if there is one.
 fn bc_list(set = boxarts) {
-	local dir lst raw f n url
+	local dir lst raw html f n nm norm u a1 a2 a3 stamp out= now=$EPOCHSECONDS
+	local -a all
 
 	dir := bc_cache
-	url := bc_url "$set"
+	u := bc_url "$set"
 	lst="$dir/dos-$set.lst"
-	if [ -s "$lst" ] && [ -z "$(find "$lst" -mtime +30 2> /dev/null)" ]; then
-		ret "$lst"
-		return 0
+	stamp="$lst.stamp"
+	if [ -s "$lst" ] && [ -r "$stamp" ]; then
+		read -r f < "$stamp"
+		if [ "${f:-0}" -gt $((now - 2592000)) ]; then
+			IFS=$'\t' read -r a1 a2 a3 < "$lst"
+			if [ -n "$a3" ]; then
+				ret "$lst"
+				return 0
+			fi
+		fi
 	fi
 	mkdir -p "$dir" || return 1
 	raw="$lst.part"
-	bc_get "$url" "$raw" 6000000 || { command rm -f -- "$raw"; return 1; }
-	grep -o 'href="[^"]*\.png"' "$raw" | sed -e 's/^href="//' -e 's/"$//' -e 's/&amp;/\&/g' > "$raw.enc"
-	[ -s "$raw.enc" ] || { command rm -f -- "$raw" "$raw.enc"; return 1; }
-	: > "$raw.dec"
-	while IFS= read -r f; do
+	if ! bc_get "$u" "$raw" 6000000; then
+		command rm -f -- "$raw"
+		[ -s "$lst" ] && { ret "$lst"; return 0; }
+		return 1
+	fi
+	html=$(< "$raw")
+	command rm -f -- "$raw"
+	match -a "$html" 'href="[^"]*\.png"' all || { [ -s "$lst" ] && { ret "$lst"; return 0; }; return 1; }
+	for f in "${all[@]}"; do
+		f=${f#href=\"}
+		f=${f%\"}
+		f=${f//"&amp;"/"&"}
 		n=${f//\\/%5C}
-		printf '%b\n' "${n//%/\\x}" >> "$raw.dec"
-	done < "$raw.enc"
-	paste -d '\t' "$raw.dec" "$raw.enc" > "$lst"
-	command rm -f -- "$raw" "$raw.enc" "$raw.dec"
+		printf -v nm '%b' "${n//%/\\x}"
+		norm := bm_norm "$nm"
+		out+="$nm"$'\t'"$f"$'\t'"$norm"$'\n'
+	done
+	printf '%s' "$out" > "$lst.part"
+	command mv -f -- "$lst.part" "$lst"
+	printf '%s\n' "$now" > "$stamp"
 	ret "$lst"
 }
 
@@ -237,97 +256,155 @@ fn bc_get(url, out, int max) {
 	return 1
 }
 
-# The awk both the strict matcher and the loose search are written in, as one text (no single quote in it, so it
-# can sit in one): how a name is made alike, the short names DOS folders have, and the strict rules.
-BC_AWKF='
-function squash(s) { gsub(/ /, "", s); return s }
-function words(s,   n, i, a, c, p, o, w) {
-	o = ""; p = ""
-	for (i = 1; i <= length(s); i++) {
-		c = substr(s, i, 1)
-		if (p ~ /[a-z]/ && c ~ /[0-9]/) o = o " "
-		o = o c; p = c
-	}
-	n = split(o, a, " ")
-	o = ""
-	for (i = 1; i <= n; i++) {
-		w = a[i]
-		if (i > 1) {
-			if (w == "ii") w = "2"; else if (w == "iii") w = "3"; else if (w == "iv") w = "4"
-			else if (w == "vi") w = "6"; else if (w == "vii") w = "7"; else if (w == "viii") w = "8"; else if (w == "ix") w = "9"
-			else if (w == "v" && (i == n || a[i - 1] !~ /^(of|the|a|an|and|in|for|to)$/)) w = "5"
-			else if (w == "i" && a[i - 1] !~ /^(of|the|a|an|and|in|for|to|that|what|when|where|how|why|if|as|so|am|do|did|can|will|but|or)$/) w = "1"
-		}
-		o = o (o == "" ? "" : " ") w
-	}
-	return o
+# How a name is made alike, the short names DOS folders have, and the strict rules the matcher goes by. Scores are
+# whole numbers, a hundred to the unit, the lower the better for the strict one.
+
+# A name with a number split from the letters before it ("keen1" is "keen 1") and a Roman numeral as a number.
+fn bm_words(s) {
+	local o i n w p r
+	local -a a
+
+	rsub -g "$s" '([a-z])([0-9])' '\1 \2' o
+	read -ra a <<< "$o"
+	n=${#a[@]}
+	r=
+	for ((i = 0; i < n; i++)); do
+		w=${a[$i]}
+		if [ "$i" -gt 0 ]; then
+			p=${a[$((i - 1))]}
+			case $w in
+			ii) w=2 ;;
+			iii) w=3 ;;
+			iv) w=4 ;;
+			vi) w=6 ;;
+			vii) w=7 ;;
+			viii) w=8 ;;
+			ix) w=9 ;;
+			v)
+				case $p in of | the | a | an | and | in | for | to) [ "$i" = $((n - 1)) ] && w=5 ;; *) w=5 ;; esac ;;
+			i)
+				case $p in of | the | a | an | and | in | for | to | that | what | when | where | how | why | if | as | so | am | do | did | can | will | but | or) ;; *) w=1 ;; esac ;;
+			esac
+		fi
+		r="$r${r:+ }$w"
+	done
+	ret "$r"
 }
-function norm(s,   x) {
-	x = tolower(s)
-	sub(/\.png$/, "", x)
-	gsub(/\([^)]*\)/, " ", x)
-	gsub(/\[[^]]*\]/, " ", x)
-	gsub(sq, "", x)
-	gsub(/[`"]/, "", x)
-	gsub(/[ \t]+$/, "", x)
-	if (match(x, /, (the|a|an)$/)) x = substr(x, RSTART + 2) " " substr(x, 1, RSTART - 1)
-	gsub(/&/, " and ", x)
-	gsub(/[^a-z0-9]+/, " ", x)
-	gsub(/^ +| +$/, "", x)
-	x = words(x)
-	if (x ~ /^(the|a|an) /) sub(/^(the|a|an) /, "", x)
-	return x
+
+# A name as the matcher reads it: lower case, without the (year) or [tags], the apostrophes, the leading or trailing
+# "the", "&" as "and", the punctuation and a Roman numeral as a number.
+fn bm_norm(s) {
+	local x=${s,,}
+
+	rsub "$x" '\.png$' '' x
+	rsub -g "$x" '\([^)]*\)' ' ' x
+	rsub -g "$x" '\[[^]]*\]' ' ' x
+	x=${x//\'/}
+	x=${x//\`/}
+	x=${x//\"/}
+	rsub "$x" '[[:space:]]+$' '' x
+	if [[ $x =~ ^(.*),\ (the|a|an)$ ]]; then
+		x="${BASH_REMATCH[2]} ${BASH_REMATCH[1]}"
+	fi
+	x=${x//&/ and }
+	rsub -g "$x" '[^a-z0-9]+' ' ' x
+	rsub -g "$x" '^ +| +$' '' x
+	x := bm_words "$x"
+	rsub "$x" '^(the|a|an) ' '' x
+	ret "$x"
 }
-function lev1(a, b,   la, lb, i, k, tmp, ch) {
-	la = length(a); lb = length(b)
-	if (la - lb > 1 || lb - la > 1) return 0
-	if (la == lb) {
-		k = 0
-		for (i = 1; i <= la; i++) if (substr(a, i, 1) != substr(b, i, 1)) { k++; ch = substr(a, i, 1) substr(b, i, 1); if (ch ~ /[0-9]/ || k > 1 || i == la) return 0 }
-		return k == 1
-	}
-	if (la < lb) { tmp = a; a = b; b = tmp; la = length(a); lb = length(b) }
-	for (i = 1; i <= lb; i++) if (substr(a, i, 1) != substr(b, i, 1)) break
-	if (substr(a, i, 1) ~ /[0-9]/ || i >= la) return 0
-	return substr(a, i + 1) == substr(b, i)
+
+# Whether two names differ by one slip of a letter: not in a number, not at the end, which is the difference between
+# a game and its sequel or its plural.
+fn bm_lev1(a, b) {
+	local la=${#a} lb=${#b} i k=0 t ca cb
+
+	[ $((la - lb)) -gt 1 ] || [ $((lb - la)) -gt 1 ] && return 1
+	if [ "$la" = "$lb" ]; then
+		for ((i = 0; i < la; i++)); do
+			ca=${a:i:1}
+			cb=${b:i:1}
+			[ "$ca" = "$cb" ] && continue
+			k=$((k + 1))
+			case $ca$cb in *[0-9]*) return 1 ;; esac
+			[ "$k" -gt 1 ] || [ "$i" = $((la - 1)) ] && return 1
+		done
+		[ "$k" = 1 ]
+		return
+	fi
+	if [ "$la" -lt "$lb" ]; then t=$a; a=$b; b=$t; t=$la; la=$lb; lb=$t; fi
+	for ((i = 0; i < lb; i++)); do
+		[ "${a:i:1}" = "${b:i:1}" ] || break
+	done
+	case ${a:i:1} in [0-9]) return 1 ;; esac
+	[ $((i + 1)) -ge "$la" ] && return 1
+	[ "${a:$((i + 1))}" = "${b:i}" ]
 }
-function alias(q,   d) {
-	d = substr(q, length(q), 1)
-	if (q ~ /^(prince|pop|pop1)$/) return "prince of persia"
-	if (q ~ /^pop ?2$/) return "prince of persia 2"
-	if (q ~ /^wolf ?3d$/) return "wolfenstein 3d"
-	if (q ~ /^doom ?2$/) return "doom 2"
-	if (q ~ /^dott$/) return "day of the tentacle"
-	if (q ~ /^sam ?(and|n)? ?max$/) return "sam and max hit the road"
-	if (q ~ /^mi ?1$/) return "secret of monkey island"
-	if (q ~ /^mi ?2$/) return "monkey island 2"
-	if (q ~ /^lsl ?[0-9]$/) return "leisure suit larry " d
-	if (q ~ /^kq ?[0-9]$/) return "kings quest " d
-	if (q ~ /^sq ?[0-9]$/) return "space quest " d
-	if (q ~ /^pq ?[0-9]$/) return "police quest " d
-	if (q ~ /^sc ?2000$/ || q ~ /^sc2k$/) return "simcity 2000"
-	if (q ~ /^civ$/) return "civilization"
-	if (q ~ /^civ ?[0-9]$/) return "civilization " d
-	if (q ~ /^xcom$/) return "x com ufo defense"
-	if (q ~ /^cnc$/) return "command and conquer"
-	if (q ~ /^war ?2$/) return "warcraft 2"
-	if (q ~ /^mom$/) return "master of magic"
-	if (q ~ /^moo$/) return "master of orion"
-	if (q ~ /^moo ?2$/) return "master of orion 2"
-	return q
+
+# A short name DOS folders have, spelled out.
+fn bm_alias(q) {
+	local d=${q: -1}
+
+	if [[ $q =~ ^(prince|pop|pop1)$ ]]; then ret "prince of persia"; return 0; fi
+	if [[ $q =~ ^pop\ ?2$ ]]; then ret "prince of persia 2"; return 0; fi
+	if [[ $q =~ ^wolf\ ?3d$ ]]; then ret "wolfenstein 3d"; return 0; fi
+	if [[ $q =~ ^doom\ ?2$ ]]; then ret "doom 2"; return 0; fi
+	if [[ $q =~ ^dott$ ]]; then ret "day of the tentacle"; return 0; fi
+	if [[ $q =~ ^sam\ ?(and|n)?\ ?max$ ]]; then ret "sam and max hit the road"; return 0; fi
+	if [[ $q =~ ^mi\ ?1$ ]]; then ret "secret of monkey island"; return 0; fi
+	if [[ $q =~ ^mi\ ?2$ ]]; then ret "monkey island 2"; return 0; fi
+	if [[ $q =~ ^lsl\ ?[0-9]$ ]]; then ret "leisure suit larry $d"; return 0; fi
+	if [[ $q =~ ^kq\ ?[0-9]$ ]]; then ret "kings quest $d"; return 0; fi
+	if [[ $q =~ ^sq\ ?[0-9]$ ]]; then ret "space quest $d"; return 0; fi
+	if [[ $q =~ ^pq\ ?[0-9]$ ]]; then ret "police quest $d"; return 0; fi
+	if [[ $q =~ ^(sc\ ?2000|sc2k)$ ]]; then ret "simcity 2000"; return 0; fi
+	if [[ $q =~ ^civ$ ]]; then ret "civilization"; return 0; fi
+	if [[ $q =~ ^civ\ ?[0-9]$ ]]; then ret "civilization $d"; return 0; fi
+	if [[ $q =~ ^xcom$ ]]; then ret "x com ufo defense"; return 0; fi
+	if [[ $q =~ ^cnc$ ]]; then ret "command and conquer"; return 0; fi
+	if [[ $q =~ ^war\ ?2$ ]]; then ret "warcraft 2"; return 0; fi
+	if [[ $q =~ ^mom$ ]]; then ret "master of magic"; return 0; fi
+	if [[ $q =~ ^moo$ ]]; then ret "master of orion"; return 0; fi
+	if [[ $q =~ ^moo\ ?2$ ]]; then ret "master of orion 2"; return 0; fi
+	ret "$q"
 }
-function nwords(s,   a) { return split(s, a, " ") }
-function score(q, qs, qn, numbered, n, ns,   tail) {
-	if (n == q) return 0
-	if (ns == qs) return 0.2
-	if (numbered && index(n, q " ") == 1) return 1 + length(n) / 100
-	tail = substr(q, length(n) + 2)
-	if (qn >= 3 && nwords(n) >= 2 && index(q, n " ") == 1 && tail ~ /^(sci|vga|ega|cga|cd|dos|english|en)$/) return 2 + length(q) / 100
-	if (numbered && qn >= 2 && index(" " n " ", " " q " ") > 0) return 3 + length(n) / 100
-	if (length(qs) >= 10 && qn == nwords(n) && substr(qs, 1, 3) == substr(ns, 1, 3) && lev1(qs, ns)) return 4
-	return -1
+
+# The number of words in a name.
+fn bm_nwords(s) {
+	local -a a
+
+	read -ra a <<< "$s"
+	ret "${#a[@]}"
 }
-'
+
+# The strict rule a listed name n satisfies for the query q, best first: 0 the same name; 20 the same but for spaces
+# (Sim City, SimCity); 100 and a little for a numbered game ("Larry 2") whose name is the start of n, which is the one
+# with its subtitle; 200 for n with a format suffix (sci, vga, cd) on it; 300 for the numbered game inside n; 400 for one
+# slip of a letter in a long name. -1 when none.
+fn bm_score(q, qs, int qn, int numbered, n, ns) {
+	local tail nn
+
+	if [ "$n" = "$q" ]; then ret 0; return 0; fi
+	if [ "$ns" = "$qs" ]; then ret 20; return 0; fi
+	if [ "$numbered" = 1 ] && [[ $n == "$q "* ]]; then ret $((100 + ${#n})); return 0; fi
+	nn := bm_nwords "$n"
+	if [ "$qn" -ge 3 ] && [ "$nn" -ge 2 ] && [[ $q == "$n "* ]]; then
+		tail=${q:$((${#n} + 1))}
+		case $tail in sci | vga | ega | cga | cd | dos | english | en) ret $((200 + ${#q})); return 0 ;; esac
+	fi
+	if [ "$numbered" = 1 ] && [ "$qn" -ge 2 ] && [[ " $n " == *" $q "* ]]; then ret $((300 + ${#n})); return 0; fi
+	if [ "${#qs}" -ge 10 ] && [ "$qn" = "$nn" ] && [ "${qs:0:3}" = "${ns:0:3}" ] && bm_lev1 "$qs" "$ns"; then ret 400; return 0; fi
+	ret -1
+}
+
+# Whether a listed name carries a demo's mark, or a year: the demo is the last choice, a year a little better.
+fn bm_isdemo(nm) {
+	[[ ${nm,,} =~ \((demo|beta|proto|prototype|sample|alpha|preview) ]]
+}
+
+fn bm_hasyear(nm) {
+	[[ $nm =~ \(1[0-9][0-9][0-9]\)|\(20[0-9][0-9]\) ]]
+}
 
 # Which of the listed covers is the game's. Both names are made alike first:
 # lower case, without the (year) or [tags], the apostrophes, the leading or
@@ -344,26 +421,28 @@ function score(q, qs, qn, numbered, n, ns,   tail) {
 # for its first game: a wrong cover is worse than none. Gives the encoded file
 # name, or nothing.
 fn bc_match(title, lst) {
-	local r
+	local q qs qn numbered best= bs=1000000 nm enc n ns s
 
-	r=$(awk -F '\t' -v title="$title" "$BC_AWKF"'
-BEGIN {
-	sq = sprintf("%c", 39)
-	q = alias(norm(title)); qs = squash(q); best = ""; bs = 1e9
-	qn = nwords(q); numbered = (q ~ / [0-9]+$/)
-}
-q == "" || length(qs) < 3 { next }
-{
-	n = norm($1); ns = squash(n)
-	s = score(q, qs, qn, numbered, n, ns)
-	if (s < 0) next
-	if (tolower($1) ~ /\((demo|beta|proto|prototype|sample|alpha|preview)/) s += 3
-	if ($1 ~ /\(1[0-9][0-9][0-9]\)|\(20[0-9][0-9]\)/) s -= 0.5
-	if (s < bs) { bs = s; best = $2 }
-}
-END { if (best != "") print best }
-' "$lst")
-	ret "$r"
+	q := bm_norm "$title"
+	q := bm_alias "$q"
+	qs=${q// /}
+	[ "${#qs}" -lt 3 ] && { ret ""; return 0; }
+	qn := bm_nwords "$q"
+	numbered=0
+	[[ $q =~ \ [0-9]+$ ]] && numbered=1
+	while IFS=$'\t' read -r nm enc n; do
+		[ -n "$n" ] || n := bm_norm "$nm"
+		ns=${n// /}
+		s := bm_score "$q" "$qs" "$qn" "$numbered" "$n" "$ns"
+		[ "$s" -lt 0 ] && continue
+		bm_isdemo "$nm" && s=$((s + 300))
+		bm_hasyear "$nm" && s=$((s - 50))
+		if [ "$s" -lt "$bs" ]; then
+			bs=$s
+			best=$enc
+		fi
+	done < "$lst"
+	ret "$best"
 }
 
 # Fetch a box's cover into it as .cover.png, whatever BX_ART says: its box art,
@@ -386,8 +465,7 @@ fn bc_fetch(box, only = "") {
 		url := bc_url "$set"
 		tmp="$box/.cover.png.part"
 		bc_get "$url$enc" "$tmp" 8000000 || { command rm -f -- "$tmp"; continue; }
-		magic=$(head -c 8 "$tmp" | od -An -tx1 | tr -d ' \n')
-		if [ "$magic" != 89504e470d0a1a0a ] || [ "$(stat -c %s "$tmp")" -lt 60 ]; then
+		if ! bc_dims "$tmp" > /dev/null; then
 			command rm -f -- "$tmp"
 			got=2
 			continue
@@ -399,72 +477,155 @@ fn bc_fetch(box, only = "") {
 	return $got
 }
 
-# A picture's size in pixels from its PNG header, "width height"; status 1 if it is not one.
+# A picture's size in pixels, "width height", from hibr's img; status 1 if it is not a picture hibr can read.
 fn bc_dims(f) {
-	local w h
+	local d w h
 
-	[ "$(head -c 8 "$f" | od -An -tx1 | tr -d ' \n')" = 89504e470d0a1a0a ] || return 1
-	read -r w h <<< "$(tail -c +17 "$f" | head -c 8 | od -An -tu1 | awk '{ print $1 * 16777216 + $2 * 65536 + $3 * 256 + $4, $5 * 16777216 + $6 * 65536 + $7 * 256 + $8 }')"
+	d := img size "$f" 2> /dev/null || return 1
+	read -r w h <<< "$d"
 	[ "${w:-0}" -gt 0 ] && [ "${h:-0}" -gt 0 ] || return 1
 	ret "$w $h"
 }
 
+# A query word that is a filler, not the game: "<game> box cover" finds the game.
+fn bm_stopw(w) {
+	case $w in of | the | and | a | an | in | to | for | box | boxart | cover | covers | art | front | dos | pc | game | video | ms) return 0 ;; esac
+	return 1
+}
+
+# The words of a query that are the game and not filler, kept for the loose search of a whole list, and what a name
+# must contain to be worth reading: a query word whole (a short one) or its first four letters (a long one, which a
+# name's word can match whole, as a start, or be the start of).
+BM_QT=()
+BM_NQ=0
+BM_PROBE=()
+fn bm_prep(q) {
+	local w
+	local -a g
+
+	BM_QT=()
+	BM_PROBE=()
+	BM_NQ=0
+	read -ra g <<< "$q"
+	for w in "${g[@]}"; do
+		bm_stopw "$w" && continue
+		BM_QT[BM_NQ]=$w
+		BM_NQ=$((BM_NQ + 1))
+		if [ "${#w}" -ge 4 ]; then BM_PROBE+=("${w:0:4}"); else BM_PROBE+=(" $w "); fi
+	done
+	return 0
+}
+
+# Whether a name could answer the prepared query at all: cheap, so that only those that could are read word by word.
+fn bm_probe(n) {
+	local p h=" $n "
+
+	for p in "${BM_PROBE[@]}"; do
+		[[ $h == *"$p"* ]] && return 0
+	done
+	return 1
+}
+
+# How well a listed name n answers the prepared query (bm_prep), loosely, or -1: the query's words found whole, or at
+# the start of a word (or a word of the name at the start of one), count; a number in one and not the other (a
+# sequel) costs a lot.
+fn bm_loose(q, qs, n, ns) {
+	local i j nq=$BM_NQ nn=0 hit=0 part=0 f s w
+	local -a nt g
+
+	read -ra g <<< "$n"
+	for w in "${g[@]}"; do bm_stopw "$w" || { nt[nn]=$w; nn=$((nn + 1)); }; done
+	if [ "$nq" = 0 ] || [ "$nn" = 0 ]; then ret -1; return 0; fi
+	for ((i = 0; i < nq; i++)); do
+		f=0
+		for ((j = 0; j < nn; j++)); do
+			[ "${nt[$j]}" = "${BM_QT[$i]}" ] && { f=1; break; }
+		done
+		if [ "$f" = 1 ]; then hit=$((hit + 1)); continue; fi
+		[ "${#BM_QT[$i]}" -ge 4 ] || continue
+		case ${BM_QT[$i]} in *[!0-9]*) ;; *) continue ;; esac
+		for ((j = 0; j < nn; j++)); do
+			case ${nt[$j]} in *[!0-9]*) ;; *) continue ;; esac
+			if [[ ${nt[$j]} == "${BM_QT[$i]}"* ]] || { [ "${#nt[$j]}" -ge 4 ] && [[ ${BM_QT[$i]} == "${nt[$j]}"* ]]; }; then
+				part=$((part + 1))
+				break
+			fi
+		done
+	done
+	if [ $((hit + part)) = 0 ]; then ret -1; return 0; fi
+	if [ "$nq" -ge 2 ] && [ $((2 * (hit + part))) -lt "$nq" ]; then ret -1; return 0; fi
+	s=$((10000 * (2 * hit + part) / (2 * nq) + 4000 * hit / nn))
+	for ((i = 0; i < nq; i++)); do
+		case ${BM_QT[$i]} in *[!0-9]*) continue ;; esac
+		f=0
+		for ((j = 0; j < nn; j++)); do
+			[ "${nt[$j]}" = "${BM_QT[$i]}" ] && f=1
+		done
+		[ "$f" = 0 ] && s=$((s - 3000))
+	done
+	for ((j = 0; j < nn; j++)); do
+		case ${nt[$j]} in *[!0-9]*) continue ;; esac
+		f=0
+		for ((i = 0; i < nq; i++)); do
+			[ "${BM_QT[$i]}" = "${nt[$j]}" ] && f=1
+		done
+		[ "$f" = 0 ] && s=$((s - 2000))
+	done
+	if [ "$n" = "$q" ]; then s=$((s + 10000)); elif [ "$ns" = "$qs" ]; then s=$((s + 8000)); fi
+	ret "$s"
+}
+
 # Every cover that could be the game's, best first, as "score<TAB>set<TAB>name<TAB>encoded name": loose where the
-# matcher is strict, since a person is going to look. A query word found whole or at the start of a word counts,
-# and a number that is in one name and not the other (a sequel) costs a lot. The strict matcher's choice leads.
+# matcher is strict, since a person is going to look. The strict matcher's choice leads.
 fn bc_candidates(query, int max = 16) {
-	local set lst
-	local -a files=()
+	local set lst q qs qn numbered nm enc n ns s t pri name i k top=0
+	local -a files=() sc=() ln=()
 
 	for set in boxarts titles snaps; do
 		lst := bc_list "$set" || continue
 		files+=("$lst")
 	done
 	[ "${#files[@]}" -gt 0 ] || return 1
-	awk -F '\t' -v query="$query" "$BC_AWKF"'
-function stopw(w) { return w ~ /^(of|the|and|a|an|in|to|for|box|boxart|cover|covers|art|front|dos|pc|game|video|ms)$/ }
-function loose(q, qs, n, ns,   i, j, m, nq, nn, qt, nt, hit, part, f, s, g) {
-	nq = 0; nn = 0
-	m = split(q, g, " "); for (i = 1; i <= m; i++) if (!stopw(g[i])) qt[++nq] = g[i]
-	m = split(n, g, " "); for (i = 1; i <= m; i++) if (!stopw(g[i])) nt[++nn] = g[i]
-	if (nq == 0 || nn == 0) return -1
-	hit = 0; part = 0
-	for (i = 1; i <= nq; i++) {
-		f = 0
-		for (j = 1; j <= nn; j++) if (nt[j] == qt[i]) { f = 1; break }
-		if (f) { hit++; continue }
-		if (length(qt[i]) >= 4 && qt[i] !~ /^[0-9]+$/)
-			for (j = 1; j <= nn; j++)
-				if (nt[j] !~ /^[0-9]+$/ && (index(nt[j], qt[i]) == 1 || (length(nt[j]) >= 4 && index(qt[i], nt[j]) == 1))) { part++; break }
-	}
-	if (hit + part == 0) return -1
-	if (nq >= 2 && hit + part < nq / 2) return -1
-	s = 100 * (hit + 0.5 * part) / nq + 40 * hit / nn
-	for (i = 1; i <= nq; i++) if (qt[i] ~ /^[0-9]+$/) { f = 0; for (j = 1; j <= nn; j++) if (nt[j] == qt[i]) f = 1; if (!f) s -= 30 }
-	for (j = 1; j <= nn; j++) if (nt[j] ~ /^[0-9]+$/) { f = 0; for (i = 1; i <= nq; i++) if (qt[i] == nt[j]) f = 1; if (!f) s -= 20 }
-	if (n == q) s += 100
-	else if (ns == qs) s += 80
-	return s
-}
-BEGIN {
-	sq = sprintf("%c", 39)
-	q = alias(norm(query)); qs = squash(q); qn = nwords(q); numbered = (q ~ / [0-9]+$/)
-	if (length(qs) < 2) exit
-}
-FNR == 1 { set = FILENAME; sub(/^.*dos-/, "", set); sub(/\.lst$/, "", set); pri = (set == "boxarts") ? 3 : (set == "titles" ? 1 : 0) }
-{
-	n = norm($1); ns = squash(n)
-	s = loose(q, qs, n, ns)
-	if (s < 0) next
-	t = score(q, qs, qn, numbered, n, ns)
-	if (t >= 0) s += 150 - 10 * t
-	s += pri
-	if ($1 ~ /\(1[0-9][0-9][0-9]\)|\(20[0-9][0-9]\)/) s += 1
-	if (tolower($1) ~ /\((demo|beta|proto|prototype|sample|alpha|preview)/) s -= 10
-	name = $1; sub(/\.png$/, "", name)
-	printf "%.1f\t%s\t%s\t%s\n", s, set, name, $2
-}
-' "${files[@]}" | sort -t "$(printf '\t')" -k1,1nr | head -n "$max"
+	q := bm_norm "$query"
+	q := bm_alias "$q"
+	qs=${q// /}
+	[ "${#qs}" -lt 2 ] && return 0
+	qn := bm_nwords "$q"
+	numbered=0
+	[[ $q =~ \ [0-9]+$ ]] && numbered=1
+	bm_prep "$q"
+	for lst in "${files[@]}"; do
+		set=${lst##*/dos-}
+		set=${set%.lst}
+		pri=0
+		[ "$set" = boxarts ] && pri=300
+		[ "$set" = titles ] && pri=100
+		while IFS=$'\t' read -r nm enc n; do
+			[ -n "$n" ] || n := bm_norm "$nm"
+			bm_probe "$n" || continue
+			ns=${n// /}
+			s := bm_loose "$q" "$qs" "$n" "$ns"
+			[ "$s" -lt 0 ] && continue
+			t := bm_score "$q" "$qs" "$qn" "$numbered" "$n" "$ns"
+			[ "$t" -ge 0 ] && s=$((s + 15000 - 10 * t))
+			s=$((s + pri))
+			bm_hasyear "$nm" && s=$((s + 100))
+			bm_isdemo "$nm" && s=$((s - 1000))
+			name=${nm%.png}
+			if [ "$top" -ge "$max" ] && [ "$s" -le "${sc[$((top - 1))]}" ]; then continue; fi
+			k=$top
+			[ "$top" -lt "$max" ] && top=$((top + 1)) || k=$((top - 1))
+			while [ "$k" -gt 0 ] && [ "$s" -gt "${sc[$((k - 1))]}" ]; do
+				sc[$k]=${sc[$((k - 1))]}
+				ln[$k]=${ln[$((k - 1))]}
+				k=$((k - 1))
+			done
+			sc[$k]=$s
+			ln[$k]="$s"$'\t'"$set"$'\t'"$name"$'\t'"$enc"
+		done < "$lst"
+	done
+	for ((i = 0; i < top; i++)); do printf '%s\n' "${ln[$i]}"; done
+	return 0
 }
 
 # A cover's picture for the picker, kept in the cache: its path when it is there or can be fetched and is a PNG.
@@ -481,7 +642,7 @@ fn bc_thumb(set, enc) {
 	tmp="$f.part"
 	u := bc_url "$set"
 	bc_get "$u$enc" "$tmp" 8000000 || { command rm -f -- "$tmp"; return 1; }
-	if [ "$(head -c 8 "$tmp" | od -An -tx1 | tr -d ' \n')" != 89504e470d0a1a0a ]; then
+	if ! bc_dims "$tmp" > /dev/null; then
 		command rm -f -- "$tmp"
 		return 1
 	fi
@@ -561,14 +722,18 @@ fn bc_done(int n, int st) {
 	return 0
 }
 
-# Put a picture of the person's own in as a box's cover. A PNG only.
+# Put a picture of the person's own in as a box's cover: saved as a PNG by hibr's img (a PNG or a JPEG), which is also
+# what says whether it is a picture at all.
 fn bc_set(box, pic) {
-	local magic
+	local tmp="$box/.cover.png.part"
 
 	[ -r "$pic" ] || { echo "boxer: no such file: $pic" >&2; return 1; }
-	magic=$(head -c 8 "$pic" | od -An -tx1 | tr -d ' \n')
-	[ "$magic" = 89504e470d0a1a0a ] || { echo "boxer: a cover must be a PNG: $pic" >&2; return 1; }
-	command cp -f -- "$pic" "$box/.cover.png" || return 1
+	if ! img save "$pic" "$tmp" > /dev/null 2>&1; then
+		command rm -f -- "$tmp"
+		echo "boxer: not a picture hibr can read (a PNG or a JPEG): $pic" >&2
+		return 1
+	fi
+	command mv -f -- "$tmp" "$box/.cover.png" || return 1
 	bc_kind_set "$box" own
 	return 0
 }
@@ -594,22 +759,12 @@ fn bx_games() {
 	return 0
 }
 
-# For another app: make a picture the cover of a game. A PNG is kept as it is; another kind (a JPEG from the
-# web) is saved as a PNG first where hibr can (`img save`), else it is refused. Status 0, or 1 when it was not used.
+# For another app: make a picture the cover of a game. A PNG or a JPEG is saved as the cover (hibr's img save); anything
+# else is refused. Status 0, or 1 when it was not used.
 fn bx_setcover(box, pic) {
-	local tmp st
-
 	[ -d "$box" ] && [ -r "$pic" ] || return 1
 	bm_up "$box"
-	if [ "$(head -c 8 "$pic" | od -An -tx1 | tr -d ' \n')" = 89504e470d0a1a0a ]; then
-		bc_set "$box" "$pic" 2> /dev/null
-		return $?
-	fi
-	tmp="$box/.cover.png.part"
-	img save "$pic" "$tmp" > /dev/null 2>&1 && bc_set "$box" "$tmp" 2> /dev/null
-	st=$?
-	command rm -f -- "$tmp"
-	return $st
+	bc_set "$box" "$pic" 2> /dev/null
 }
 
 # After an import: a cover the game came with or sat beside, else, when it is
@@ -639,6 +794,24 @@ fn bx_import(src, title = "", mode = auto) {
 	ret "$box"
 }
 
+# A tarball opened into a folder: by hibr's archive module (.tar, .tar.gz, .tgz) where it takes it, else by tar
+# (which the module does not replace for .tar.xz or .tar.bz2, and which reads a tarball with a "./" entry the
+# module refuses).
+fn bx_untar(src, dest) {
+	local ok=1
+
+	case $src in
+	*.tar | *.tar.gz | *.tgz)
+		if need archive 2> /dev/null && archive open bxtar "$src" 2> /dev/null; then
+			archive extract bxtar "$dest" > /dev/null 2>&1 && ok=0
+			archive close bxtar > /dev/null 2>&1
+		fi ;;
+	esac
+	[ "$ok" = 0 ] && return 0
+	command -v tar > /dev/null || { echo "boxer: tar is needed to open $src" >&2; return 1; }
+	tar -xf "$src" -C "$dest"
+}
+
 # Make a gamebox on the shelf from src -- a folder, an archive, a CD image or
 # a lone program -- the way Boxer does, and say where it is.
 #
@@ -665,7 +838,7 @@ fn bx_import_box(src, title = "", mode = auto) {
 		work=$tmp ;;
 	*.tar | *.tar.gz | *.tgz | *.tar.xz | *.tar.bz2)
 		tmp=$(mktemp -d) || return 1
-		tar -xf "$src" -C "$tmp" || { command rm -rf -- "$tmp"; return 1; }
+		bx_untar "$src" "$tmp" || { command rm -rf -- "$tmp"; return 1; }
 		work=$tmp ;;
 	*.exe | *.com | *.bat)
 		tmp=$(mktemp -d) || return 1
@@ -1189,26 +1362,37 @@ fn bx_askdraw(int id, int h, int w, ...lines) {
 
 # Percent-encode a search for a web address: letters, digits and - _ . ~ as they are, a space as +, the rest as %XX.
 fn bx_urlenc(t) {
-	local o= i ch hex
+	local o= i ch cp
 
 	for ((i = 0; i < ${#t}; i++)); do
 		ch=${t:i:1}
 		case $ch in
 		[A-Za-z0-9._~-]) o+=$ch ;;
 		" ") o+=+ ;;
-		*) hex=$(printf '%s' "$ch" | od -An -tx1 | tr -d ' \n' | tr a-f A-F); o+=$(printf '%s' "$hex" | sed 's/../%&/g') ;;
+		*)
+			printf -v cp '%d' "'$ch"
+			if [ "$cp" -lt 128 ]; then
+				o+=$(printf '%%%02X' "$cp")
+			elif [ "$cp" -lt 2048 ]; then
+				o+=$(printf '%%%02X%%%02X' $((192 + cp / 64)) $((128 + cp % 64)))
+			elif [ "$cp" -lt 65536 ]; then
+				o+=$(printf '%%%02X%%%02X%%%02X' $((224 + cp / 4096)) $((128 + cp / 64 % 64)) $((128 + cp % 64)))
+			else
+				o+=$(printf '%%%02X%%%02X%%%02X%%%02X' $((240 + cp / 262144)) $((128 + cp / 4096 % 64)) $((128 + cp / 64 % 64)) $((128 + cp % 64)))
+			fi ;;
 		esac
 	done
 	ret "$o"
 }
-
 # The search for a game's cover from the person's template: {name} is the game's name without a (year) or [tag],
 # {year} the year if its name has one, {program} the program it runs. An empty one leaves no gap.
 fn bx_searchtext(box, name) {
 	local t=${BX_SEARCH:-"{name} box cover"} y= p= n=$name
 
-	y=$(printf '%s' "$name" | sed -nE 's/.*[[(]((19|20)[0-9][0-9])[])].*/\1/p' | head -n 1)
-	n=$(printf '%s' "$name" | sed 's/[[(][^])]*[])]//g; s/  */ /g; s/^ //; s/ $//')
+	if match "$name" '[[(]((19|20)[0-9][0-9])[])]'; then y=${M[1]}; fi
+	rsub -g "$name" '[[(][^])]*[])]' '' n
+	rsub -g "$n" ' +' ' ' n
+	rsub -g "$n" '^ | $' '' n
 	[ -n "$n" ] || n=$name
 	if [ -r "$box/boxer.json" ] && json parse BCJ "$(< "$box/boxer.json")" 2> /dev/null; then
 		p := bp_get BCJ .launch.program ""
@@ -1218,7 +1402,8 @@ fn bx_searchtext(box, name) {
 	t=${t//"{name}"/$n}
 	t=${t//"{year}"/$y}
 	t=${t//"{program}"/$p}
-	t=$(printf '%s' "$t" | sed 's/  */ /g; s/^ //; s/ $//')
+	rsub -g "$t" ' +' ' ' t
+	rsub -g "$t" '^ | $' '' t
 	ret "$t"
 }
 
