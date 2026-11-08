@@ -4,6 +4,11 @@ What shipped, newest first. **Boxer** is the app (the catalogue's `boxer`, with 
 `boxerset`); **hibr-retro** is the deb (the `retro` module and DOSBox Pure). A line names the hibr
 or Blit release a feature needs when it needs one. Dates are 2026.
 
+## Boxer 1.40 (Nov 8)
+- Tarballs (`.tar`, `.tar.gz`, `.tgz`) are opened by hibr's `archive` module alone, including one made with
+  `tar czf x.tgz .` (hibr #487, fixed in 0.99.468); `tar` is only for `.tar.xz` and `.tar.bz2` now. Needs
+  hibr 0.99.468.
+
 ## Boxer 1.39 (Nov 8)
 - **More of it is hibr.** The cover matcher (strict and loose) is hibr script now, not awk: the same answers on
   483 real queries against the real lists (each name's matcher form is kept in the list's cache, so a search of

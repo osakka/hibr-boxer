@@ -496,7 +496,7 @@ check("with several programs there is none chosen: the shelf asks which to run",
 out, err = imp("b := bx_import %s/src/Zipped.zip; echo \"box=$b\"" % D)
 bz = out.split("box=")[1].strip() if "box=" in out else ""
 check("a zip is unpacked and treated the same way", bool(bz) and doc(bz).get("state") == "installing", (out, err))
-for tb, how in (("Tarred.tgz", "by hibr's archive module"), ("Dotted.tgz", "by tar where the module refuses its ./ entry")):
+for tb, how in (("Tarred.tgz", "by hibr's archive module"), ("Dotted.tgz", "even one made with tar czf x.tgz . (a ./ entry)")):
     out, err = imp("b := bx_import %s/src/%s; echo \"box=$b\"" % (D, tb))
     bt = out.split("box=")[1].strip() if "box=" in out else ""
     check("a tarball is unpacked and treated the same way, %s" % how, bool(bt) and doc(bt).get("state") == "installing", (out, err))

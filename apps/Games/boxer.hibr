@@ -17,7 +17,7 @@
 strict
 
 
-app boxer "DOS games, one folder to a game" 1.39
+app boxer "DOS games, one folder to a game" 1.40
 # modules: img retro fetch archive
 # part: apps/boxerplay.hibr
 # part: control-panel/boxerset.hibr
@@ -794,20 +794,18 @@ fn bx_import(src, title = "", mode = auto) {
 	ret "$box"
 }
 
-# A tarball opened into a folder: by hibr's archive module (.tar, .tar.gz, .tgz) where it takes it, else by tar
-# (which the module does not replace for .tar.xz or .tar.bz2, and which reads a tarball with a "./" entry the
-# module refuses).
+# A tarball opened into a folder: by hibr's archive module (.tar, .tar.gz, .tgz; hibr 0.99.468), else, for the
+# compressions it does not read (.tar.xz, .tar.bz2), by tar.
 fn bx_untar(src, dest) {
 	local ok=1
 
 	case $src in
 	*.tar | *.tar.gz | *.tgz)
-		if need archive 2> /dev/null && archive open bxtar "$src" 2> /dev/null; then
-			archive extract bxtar "$dest" > /dev/null 2>&1 && ok=0
-			archive close bxtar > /dev/null 2>&1
-		fi ;;
+		need archive 2> /dev/null && archive open bxtar "$src" 2> /dev/null || return 1
+		archive extract bxtar "$dest" > /dev/null 2>&1 && ok=0
+		archive close bxtar > /dev/null 2>&1
+		return $ok ;;
 	esac
-	[ "$ok" = 0 ] && return 0
 	command -v tar > /dev/null || { echo "boxer: tar is needed to open $src" >&2; return 1; }
 	tar -xf "$src" -C "$dest"
 }
